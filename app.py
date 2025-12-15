@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING AND DEFAULTS)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - KEYERROR FIXED)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。修正了头部长度计算偏差。
+特点：修复了因 IIN 映射表结构不一致导致的 KeyError。
 """
 import streamlit as st
 from PIL import Image
@@ -24,63 +24,70 @@ except ImportError:
         return img
 
 
-# ==================== 0. 配置与 51 州 IIN 映射 ====================
+# ==================== 0. 配置与 51 州 IIN 映射 (已修复结构) ====================
 
+# 使用标准的美国州缩写作为键，确保结构一致性
 JURISDICTION_MAP = {
-    "ME": {"name": "Maine - 缅因州", "iin": "636021", "jver": "01", "race": "W"},
-    "VT": {"name": "Vermont - 佛蒙特州", "iin": "636044", "jver": "01", "race": "W"},
-    "NH": {"name": "New Hampshire - 新罕布什尔州", "iin": "636029", "jver": "01", "race": "W"},
-    "MA": {"name": "Massachusetts - 马萨诸塞州", "iin": "636022", "jver": "01", "race": "W"},
-    "RI": {"name": "Rhode Island - 罗德岛州", "iin": "636039", "jver": "01", "race": "W"},
-    "CT": {"name": "Connecticut - 康涅狄格州", "iin": "636006", "jver": "01", "race": "W"},
-    "NY": {"name": "New York - 纽约州", "iin": "636001", "jver": "01", "race": "W"},
-    "NJ": {"name": "New Jersey - 新泽西州", "iin": "636036", "jver": "01", "race": "W"},
-    "PA": {"name": "Pennsylvania - 宾夕法尼亚州", "iin": "636025", "jver": "01", "race": "W"},
-    "OH": {"name": "Ohio - 俄亥俄州", "iin": "636023", "jver": "01", "race": "W"},
-    "IN": {"name": "Indiana - 印第安纳州", "iin": "636037", "jver": "01", "race": "W"},
-    "IL": {"name": "Illinois - 伊利诺伊州", "iin": "636035", "jver": "01", "race": "W"},
-    "MI": {"name": "Michigan - 636032", "jver": "01", "race": "W"},
-    "WI": {"name": "Wisconsin - 威斯康星州", "iin": "636031", "jver": "01", "race": "W"},
-    "MN": {"name": "Minnesota - 明尼苏达州", "iin": "636038", "jver": "01", "race": "W"},
-    "IA": {"name": "Iowa - 爱荷华州", "iin": "636018", "jver": "01", "race": "W"},
-    "MO": {"name": "Missouri - 密苏里州", "iin": "636030", "jver": "01", "race": "W"},
-    "ND": {"name": "North Dakota - 北达科他州", "iin": "636034", "jver": "01", "race": "W"},
-    "SD": {"name": "South Dakota - 南达科他州", "iin": "636042", "jver": "01", "race": "W"},
-    "NE": {"name": "Nebraska - 内布拉斯加州", "iin": "636054", "jver": "01", "race": "W"},
-    "KS": {"name": "Kansas - 堪萨斯州", "iin": "636022", "jver": "01", "race": "W"},
-    "DE": {"name": "Delaware - 特拉华州", "iin": "636011", "jver": "01", "race": "W"},
-    "MD": {"name": "Maryland - 马里兰州", "iin": "636003", "jver": "01", "race": "W"},
-    "VA": {"name": "Virginia - 弗吉尼亚州", "iin": "636000", "jver": "01", "race": "W"},
-    "WV": {"name": "West Virginia - 西弗吉尼亚州", "iin": "636061", "jver": "01", "race": "W"},
-    "NC": {"name": "North Carolina - 北卡罗来纳州", "iin": "636004", "jver": "01", "race": "W"},
-    "SC": {"name": "South Carolina - 南卡罗来纳州", "iin": "636005", "jver": "01", "race": "W"},
-    "GA": {"name": "Georgia - 佐治亚州", "iin": "636055", "jver": "01", "race": "W"},
-    "FL": {"name": "Florida - 佛罗里达州", "iin": "636010", "jver": "01", "race": "W"},
-    "KY": {"name": "Kentucky - 肯塔基州", "iin": "636046", "jver": "01", "race": "W"},
-    "TN": {"name": "Tennessee - 田纳西州", "iin": "636053", "jver": "01", "race": "W"},
-    "AL": {"name": "Alabama - 阿拉巴马州", "iin": "636033", "jver": "01", "race": "W"},
-    "MS": {"name": "Mississippi - 密西西比州", "iin": "636051", "jver": "01", "race": "W"},
-    "AR": {"name": "Arkansas - 阿肯色州", "iin": "636021", "jver": "01", "race": "W"},
-    "LA": {"name": "Louisiana - 路易斯安那州", "iin": "636007", "jver": "01", "race": "W"},
-    "OK": {"name": "Oklahoma - 俄克拉荷马州", "iin": "636058", "jver": "01", "race": "W"},
-    "TX": {"name": "Texas - 德克萨斯州", "iin": "636015", "jver": "01", "race": "W"},
-    "MT": {"name": "Montana - 蒙大拿州", "iin": "636008", "jver": "01", "race": "W"},
-    "ID": {"name": "Idaho - 爱达荷州", "iin": "636050", "jver": "01", "race": "W"},
-    "WY": {"name": "Wyoming - 怀俄明州", "iin": "636060", "jver": "01", "race": "W"},
-    "CO": {"name": "Colorado - 科罗拉多州", "iin": "636020", "jver": "01", "race": "CLW"}, 
-    "UT": {"name": "Utah - 犹他州", "iin": "636040", "jver": "01", "race": "W"},
-    "AZ": {"name": "Arizona - 亚利桑那州", "iin": "636026", "jver": "01", "race": "W"},
-    "NM": {"name": "New Mexico - 新墨西哥州", "iin": "636009", "jver": "01", "race": "W"},
-    "AK": {"name": "Alaska - 阿拉斯加州", "iin": "636059", "jver": "00", "race": "W"},
-    "WA": {"name": "Washington - 华盛顿州", "iin": "636045", "jver": "00", "race": "W"},
-    "OR": {"name": "Oregon - 俄勒冈州", "iin": "636029", "jver": "01", "race": "W"},
-    "CA": {"name": "California - 加利福尼亚州", "iin": "636014", "jver": "00", "race": "W"},
-    "NV": {"name": "Nevada - 内华达州", "iin": "636049", "jver": "01", "race": "W"},
-    "HI": {"name": "Hawaii - 夏威夷州", "iin": "636047", "jver": "01", "race": "W"},
-    "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636043", "jver": "01", "race": "W"},
+    # IIN, JVersion, Race/Class fields are standardized here
+    "AL": {"name": "Alabama - 阿拉巴马州", "iin": "636033", "jver": "01", "race": "W", "country": "USA"},
+    "AK": {"name": "Alaska - 阿拉斯加州", "iin": "636059", "jver": "00", "race": "W", "country": "USA"},
+    "AZ": {"name": "Arizona - 亚利桑那州", "iin": "636026", "jver": "01", "race": "W", "country": "USA"},
+    "AR": {"name": "Arkansas - 阿肯色州", "iin": "636021", "jver": "01", "race": "W", "country": "USA"},
+    "CA": {"name": "California - 加利福尼亚州", "iin": "636014", "jver": "00", "race": "W", "country": "USA"},
+    "CO": {"name": "Colorado - 科罗拉多州", "iin": "636020", "jver": "01", "race": "CLW", "country": "USA"}, 
+    "CT": {"name": "Connecticut - 康涅狄格州", "iin": "636006", "jver": "01", "race": "W", "country": "USA"},
+    "DE": {"name": "Delaware - 特拉华州", "iin": "636011", "jver": "01", "race": "W", "country": "USA"},
+    "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636043", "jver": "01", "race": "W", "country": "USA"},
+    "FL": {"name": "Florida - 佛罗里达州", "iin": "636010", "jver": "01", "race": "W", "country": "USA"},
+    "GA": {"name": "Georgia - 佐治亚州", "iin": "636055", "jver": "01", "race": "W", "country": "USA"},
+    "HI": {"name": "Hawaii - 夏威夷州", "iin": "636047", "jver": "01", "race": "W", "country": "USA"},
+    "ID": {"name": "Idaho - 爱达荷州", "iin": "636050", "jver": "01", "race": "W", "country": "USA"},
+    "IL": {"name": "Illinois - 伊利诺伊州", "iin": "636035", "jver": "01", "race": "W", "country": "USA"},
+    "IN": {"name": "Indiana - 印第安纳州", "iin": "636037", "jver": "01", "race": "W", "country": "USA"},
+    "IA": {"name": "Iowa - 爱荷华州", "iin": "636018", "jver": "01", "race": "W", "country": "USA"},
+    "KS": {"name": "Kansas - 堪萨斯州", "iin": "636022", "jver": "01", "race": "W", "country": "USA"},
+    "KY": {"name": "Kentucky - 肯塔基州", "iin": "636046", "jver": "01", "race": "W", "country": "USA"},
+    "LA": {"name": "Louisiana - 路易斯安那州", "iin": "636007", "jver": "01", "race": "W", "country": "USA"},
+    "ME": {"name": "Maine - 缅因州", "iin": "636041", "jver": "01", "race": "W", "country": "USA"},
+    "MD": {"name": "Maryland - 马里兰州", "iin": "636003", "jver": "01", "race": "W", "country": "USA"},
+    "MA": {"name": "Massachusetts - 马萨诸塞州", "iin": "636002", "jver": "01", "race": "W", "country": "USA"},
+    "MI": {"name": "Michigan - 密歇根州", "iin": "636032", "jver": "01", "race": "W", "country": "USA"},
+    "MN": {"name": "Minnesota - 明尼苏达州", "iin": "636038", "jver": "01", "race": "W", "country": "USA"},
+    "MS": {"name": "Mississippi - 密西西比州", "iin": "636051", "jver": "01", "race": "W", "country": "USA"},
+    "MO": {"name": "Missouri - 密苏里州", "iin": "636030", "jver": "01", "race": "W", "country": "USA"},
+    "MT": {"name": "Montana - 蒙大拿州", "iin": "636008", "jver": "01", "race": "W", "country": "USA"},
+    "NE": {"name": "Nebraska - 内布拉斯加州", "iin": "636054", "jver": "01", "race": "W", "country": "USA"},
+    "NV": {"name": "Nevada - 内华达州", "iin": "636049", "jver": "01", "race": "W", "country": "USA"},
+    "NH": {"name": "New Hampshire - 新罕布什尔州", "iin": "636039", "jver": "01", "race": "W", "country": "USA"},
+    "NJ": {"name": "New Jersey - 新泽西州", "iin": "636036", "jver": "01", "race": "W", "country": "USA"},
+    "NM": {"name": "New Mexico - 新墨西哥州", "iin": "636009", "jver": "01", "race": "W", "country": "USA"},
+    "NY": {"name": "New York - 纽约州", "iin": "636001", "jver": "01", "race": "W", "country": "USA"},
+    "NC": {"name": "North Carolina - 北卡罗来纳州", "iin": "636004", "jver": "01", "race": "W", "country": "USA"},
+    "ND": {"name": "North Dakota - 北达科他州", "iin": "636034", "jver": "01", "race": "W", "country": "USA"},
+    "OH": {"name": "Ohio - 俄亥俄州", "iin": "636023", "jver": "01", "race": "W", "country": "USA"},
+    "OK": {"name": "Oklahoma - 俄克拉荷马州", "iin": "636058", "jver": "01", "race": "W", "country": "USA"},
+    "OR": {"name": "Oregon - 俄勒冈州", "iin": "636029", "jver": "01", "race": "W", "country": "USA"},
+    "PA": {"name": "Pennsylvania - 宾夕法尼亚州", "iin": "636025", "jver": "01", "race": "W", "country": "USA"},
+    "RI": {"name": "Rhode Island - 罗德岛州", "iin": "636052", "jver": "01", "race": "W", "country": "USA"},
+    "SC": {"name": "South Carolina - 南卡罗来纳州", "iin": "636005", "jver": "01", "race": "W", "country": "USA"},
+    "SD": {"name": "South Dakota - 南达科他州", "iin": "636042", "jver": "01", "race": "W", "country": "USA"},
+    "TN": {"name": "Tennessee - 田纳西州", "iin": "636053", "jver": "01", "race": "W", "country": "USA"},
+    "TX": {"name": "Texas - 德克萨斯州", "iin": "636015", "jver": "01", "race": "W", "country": "USA"},
+    "UT": {"name": "Utah - 犹他州", "iin": "636040", "jver": "01", "race": "W", "country": "USA"},
+    "VT": {"name": "Vermont - 佛蒙特州", "iin": "636024", "jver": "01", "race": "W", "country": "USA"},
+    "VA": {"name": "Virginia - 弗吉尼亚州", "iin": "636000", "jver": "01", "race": "W", "country": "USA"},
+    "WA": {"name": "Washington - 华盛顿州", "iin": "636045", "jver": "00", "race": "W", "country": "USA"},
+    "WV": {"name": "West Virginia - 西弗吉尼亚州", "iin": "636061", "jver": "01", "race": "W", "country": "USA"},
+    "WI": {"name": "Wisconsin - 威斯康星州", "iin": "636031", "jver": "01", "race": "W", "country": "USA"},
+    "WY": {"name": "Wyoming - 怀俄明州", "iin": "636060", "jver": "01", "race": "W", "country": "USA"},
+    # 地区
+    "GU": {"name": "Guam - 关岛", "iin": "636019", "jver": "01", "race": "W", "country": "USA"},
+    "PR": {"name": "Puerto Rico - 波多黎各", "iin": "604431", "jver": "01", "race": "W", "country": "USA"},
+    "VI": {"name": "Virgin Islands - 维尔京群岛", "iin": "636062", "jver": "01", "race": "W", "country": "USA"},
+    "AS": {"name": "American Samoa - 美属萨摩亚", "iin": "604427", "jver": "01", "race": "W", "country": "USA"},
+    "MP": {"name": "Norther Marianna Islands - 北马里亚纳群岛", "iin": "604430", "jver": "01", "race": "W", "country": "USA"},
+    # 加拿大（为保持通用性，只保留美国州/地区）
 }
-# 合并 IIN 映射表，确保所有州都存在 (这里使用的是您旧代码中的 IIN 映射，因为新数据格式复杂，但保证了 TX 的 IIN 正确)
-
 
 st.set_page_config(page_title="AAMVA PDF417 50-州 生成专家", page_icon="💳", layout="wide")
 
@@ -187,11 +194,11 @@ def generate_aamva_data_core(inputs):
     
     # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
     
-    # DAU (身高): 修正：将 DAU 字段值重新格式化为 '069 IN' (包含空格)
+    # DAU (身高): 修正：将 DAU 字段值格式化为 '069 IN' (包含空格 ' ')
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
-    # 最终修正：如果 height 存在，我们包含空格 ' '。
+    # 最终修正 DAU 格式，添加空格 ' '
     dau_field = f"DAU{height} IN\x0a" if height else "" 
     
     # DAY (眼睛)
@@ -319,6 +326,7 @@ def pdf417_generator_ui():
     
     # 默认选择 TX (使用新的 abbr 作为键)
     try:
+        # 使用 TX 的缩写进行查找，确保无论名称如何变化，都能找到正确的键
         default_state_name = [name for name, abbr in jurisdictions.items() if abbr == "TX"][0]
     except IndexError:
         default_state_name = sorted_names[0]
