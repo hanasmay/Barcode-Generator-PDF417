@@ -2,7 +2,7 @@
 """
 AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING AND DEFAULTS)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。修正了头部长度计算偏差。
+特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。
 """
 import streamlit as st
 from PIL import Image
@@ -167,8 +167,8 @@ def generate_aamva_data_core(inputs):
     rev_date = clean_date_input(inputs['rev_date'])
     dl_number = inputs['dl_number'].strip().upper()
     class_code = inputs['class_code'].strip().upper()
-    rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'].strip() else ""
-    end_code = inputs['end_code'].strip().upper() if inputs['end_code'].strip() else ""
+    rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'] else "NONE"
+    end_code = inputs['end_code'].strip().upper() if inputs['end_code'] else "NONE"
     dd_code = inputs['dd_code'].strip().upper()
     dda_code = inputs['dda_code'].strip().upper()
     sex = inputs['sex'].strip()
@@ -185,20 +185,18 @@ def generate_aamva_data_core(inputs):
     
     # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
     
-    # DAU (身高): 修正：移除单位间的空格 ' '。
+    # DAU (身高)
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
-    dau_field = f"DAU{height}IN\x0a" if height else "" 
+    dau_field = f"DAU{height} IN\x0a" if height else ""
     
     # DAY (眼睛)
-    eyes = inputs['eyes'].strip().upper() if inputs['eyes'].strip() else "NONE"
-    eyes = eyes if not st.session_state.get('hide_eyes', False) else ""
+    eyes = inputs['eyes'].strip().upper() if not st.session_state.get('hide_eyes', False) else ""
     day_field = f"DAY{eyes}\x0a" if eyes else ""
     
     # DAZ (头发)
-    hair = inputs['hair'].strip().upper() if inputs['hair'].strip() else "NONE"
-    hair = hair if not st.session_state.get('hide_hair', False) else ""
+    hair = inputs['hair'].strip().upper() if not st.session_state.get('hide_hair', False) else ""
     daz_field = f"DAZ{hair}\x0a" if hair else ""
     
     # DCL (民族/分类)
@@ -207,8 +205,7 @@ def generate_aamva_data_core(inputs):
     dcl_field = f"DCL{race}\x0a" if race else ""
     
     # DAW (体重)
-    weight = inputs['weight'].strip().upper() if inputs['weight'].strip() else "NONE"
-    weight = weight if not st.session_state.get('hide_weight', False) else ""
+    weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
     daw_field = f"DAW{weight}\x0a" if weight else "" # 暂以 \x0a 结尾
 
     # 审计码 (DCJ) - 独立隐藏
@@ -234,11 +231,8 @@ def generate_aamva_data_core(inputs):
         f"DAD\x0a",
         f"DDGN\x0a",
         f"DCA{class_code}\x0a",
-        
-        # DCB/DCD 只有在有值时才包含 \x0a
-        f"DCB{rest_code}\x0a" if rest_code else "",
-        f"DCD{end_code}\x0a" if end_code else "",
-        
+        f"DCB{rest_code}\x0a",
+        f"DCD{end_code}\x0a",
         f"DBD{iss_date}\x0a",
         f"DBB{dob}\x0a",
         f"DBA{exp_date}\x0a",
@@ -281,19 +275,13 @@ def generate_aamva_data_core(inputs):
     
     # --- 8. 动态计算头部和 Control Field ---
     
-    # **核心修正 1：精确计算 Control Field 中的 len_dl**
     len_dl = len(subfile_dl_final.encode('latin-1'))
-    
-    # **修正 1：Control Field 长度必须为 10 (C03 + 5长度 + 2文件数)**
-    control_field_len = 10 
-    
+    control_field_len = 9
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
     header_prefix_len = 21 
     designator_len = 1 * 10 
     
-    # **核心修正 2：确保总长度与 len_dl 相加**
     total_data_len = header_prefix_len + control_field_len + designator_len + len_dl
-    
     control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" 
     offset_dl_val = header_prefix_len + control_field_len + designator_len 
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
@@ -326,7 +314,7 @@ def pdf417_generator_ui():
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
         'address': '8444 KALAMATH ST', 'apartment_num': 'APT B', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
         'dob': '09/23/1990', 'exp_date': '09/23/2026', 'iss_date': '04/20/2021', 'rev_date': '10302015',
-        'dl_number': '171625540', 'class_code': 'C', 'rest_code': '', 'end_code': '',
+        'dl_number': '171625540', 'class_code': 'C', 'rest_code': 'NONE', 'end_code': 'NONE',
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
         'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'W'
     }
@@ -344,7 +332,7 @@ def pdf417_generator_ui():
     col_hide_1.checkbox("隐藏公寓号/附加地址 (DAH)", key='hide_apartment_num', value=True, help="**默认隐藏。** 移除 DAH 字段。")
     col_hide_2.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=True, help="**默认隐藏。** 移除 DCJ 字段。")
     
-    # 身体特征独立控制 (DCL 默认隐藏)
+    # 身体特征独立控制
     st.markdown("---")
     st.subheader("🏋️ 身体特征动态隐藏")
     col_phy_1, col_phy_2, col_phy_3, col_phy_4, col_phy_5 = st.columns(5)
@@ -352,7 +340,7 @@ def pdf417_generator_ui():
     col_phy_2.checkbox("隐藏体重 (DAW)", key='hide_weight', value=False)
     col_phy_3.checkbox("隐藏眼睛 (DAY)", key='hide_eyes', value=False)
     col_phy_4.checkbox("隐藏头发 (DAZ)", key='hide_hair', value=False)
-    col_phy_5.checkbox("隐藏民族/分类 (DCL)", key='hide_race', value=True, help="**默认隐藏。** 移除 DCL 字段。") 
+    col_phy_5.checkbox("隐藏民族/分类 (DCL)", key='hide_race', value=False) 
     st.markdown("---")
     
     
