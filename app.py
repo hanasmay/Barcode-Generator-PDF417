@@ -185,11 +185,11 @@ def generate_aamva_data_core(inputs):
     
     # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
     
-    # DAU (身高)
+    # DAU (身高): 修正：移除单位间的空格 ' '。
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
-    dau_field = f"DAU{height} IN\x0a" if height else ""
+    dau_field = f"DAU{height}IN\x0a" if height else "" 
     
     # DAY (眼睛)
     eyes = inputs['eyes'].strip().upper() if inputs['eyes'].strip() else "NONE"
@@ -277,7 +277,6 @@ def generate_aamva_data_core(inputs):
     dl_content_body = "".join(all_fields_list)
 
     # 7. 清理 NONE 字段并添加子文件结束符 \x0d
-    # 修正：将所有 NONE\x0a 替换为 \x0a，然后添加 \x0d。
     subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a") + "\x0d"
     
     # --- 8. 动态计算头部和 Control Field ---
@@ -325,7 +324,7 @@ def pdf417_generator_ui():
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
         'address': '8444 KALAMATH ST', 'apartment_num': 'APT B', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
         'dob': '09/23/1990', 'exp_date': '09/23/2026', 'iss_date': '04/20/2021', 'rev_date': '10302015',
-        'dl_number': '171625540', 'class_code': 'C', 'rest_code': 'NONE', 'end_code': 'NONE',
+        'dl_number': '171625540', 'class_code': 'C', 'rest_code': '', 'end_code': '',
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
         'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'W'
     }
