@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH EXTENDED HIDING)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：支持动态隐藏中间名、完整地址块、身体特征和审计信息。
+特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。
 """
 import streamlit as st
 from PIL import Image
@@ -155,8 +155,7 @@ def generate_aamva_data_core(inputs):
     aamva_version = "09" # 通用版本
     num_entries = "01" # 强制单文件模式
     
-    # 2. 清洗输入数据
-    # 基础字段（不依赖隐藏状态）
+    # 2. 清洗输入数据 - 基础字段
     last_name = inputs['last_name'].strip().upper()
     first_name = inputs['first_name'].strip().upper()
     dob = clean_date_input(inputs['dob'])
@@ -171,66 +170,46 @@ def generate_aamva_data_core(inputs):
     dda_code = inputs['dda_code'].strip().upper()
     sex = inputs['sex'].strip()
     
-    # 依赖隐藏状态的字段在构建 dl_content_tuple 时处理
+    # 3. 清洗输入数据 - 动态隐藏字段 (若隐藏，则设为空字符串)
     
-    # --- 动态构建 DL 子文件内容 ---
+    # 中间名 (DAC) - 始终可见，若为空则设为 NONE
+    middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'].strip() else "NONE"
+    dac_field = f"DAC{middle_name}\x0a"
     
-    # 1. 中间名 (DAC) - 依赖 Session State
-    middle_name_field = ""
-    if not st.session_state.get('hide_middle_name', False):
-         middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
-         middle_name_field = f"DAC{middle_name}\x0a"
+    # 地址 (DAH) - 仅公寓号可隐藏
+    apartment_num = inputs['apartment_num'].strip().upper() if inputs['apartment_num'].strip() else "NONE"
+    dah_field = f"DAH{apartment_num}\x0a" if not st.session_state.get('hide_apartment_num', False) else ""
     
-    # 2. 地址信息 (DAG, DAH, DAI, DAK) - 依赖 Session State
-    address_fields = ""
-    if not st.session_state.get('hide_address_block', False):
-        address = inputs['address'].strip().upper()
-        apartment_num = inputs['apartment_num'].strip().upper() if inputs['apartment_num'] else "NONE"
-        city = inputs['city'].strip().upper()
-        zip_input = inputs['zip_input'].replace("-", "").strip().upper()
-        zip_code = zip_input
-        if len(zip_code) == 5: zip_code += "0000"
-
-        address_fields = (
-            f"DAG{address}\x0a"                      
-            f"DAH{apartment_num}\x0a"                 # 包含 DAH (公寓号)
-            f"DAI{city}\x0a"                           
-            f"DAJ{jurisdiction_code}\x0a"              
-            f"DAK{zip_code}\x0a"
-        )
-
-    # 3. 审计信息 (DCJ) - 依赖 Session State
-    audit_field = ""
-    if not st.session_state.get('hide_audit_code', False):
-         audit_code = inputs['audit_code'].strip().upper()
-         audit_field = f"DCJ{audit_code}\x0a"
-
-    # 4. 身体特征 (DAU, DAY, DAZ, DAW, DCL) - 依赖 Session State
-    physical_fields = ""
-    if not st.session_state.get('hide_physical_block', False):
-        height = convert_height_to_inches_ui(inputs['height_input'])
-        eyes = inputs['eyes'].strip().upper()
-        hair = inputs['hair'].strip().upper()
-        race = inputs['race'].strip().upper() if inputs['race'] else config['race']
-        weight = inputs['weight'].strip().upper()
-        
-        # DAW 必须是最后一个字段 (或接近最后)
-        physical_fields = (
-            f"DAU{height} IN\x0a"
-            f"DAY{eyes}\x0a"
-            f"DAZ{hair}\x0a"
-            f"DCL{race}\x0a"                           
-            f"DAW{weight}"                           
-        )
-
+    # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
+    height_input = inputs['height_input']
+    height = convert_height_to_inches_ui(height_input)
+    height = height if not st.session_state.get('hide_height', False) else ""
     
-    # 5. 构造 DL 子文件 (动态插入字段) - 使用元组拼接
-    dl_content_tuple = (
-        f"DL",
+    eyes = inputs['eyes'].strip().upper() if not st.session_state.get('hide_eyes', False) else ""
+    hair = inputs['hair'].strip().upper() if not st.session_state.get('hide_hair', False) else ""
+    race_default = inputs['race'].strip().upper() if inputs['race'].strip() else config['race']
+    race = race_default if not st.session_state.get('hide_race', False) else ""
+    weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
+    
+    # 审计码 (DCJ) - 独立隐藏
+    audit_code = inputs['audit_code'].strip().upper() if inputs['audit_code'].strip() else "NONE"
+    dcj_field_with_sep = f"DCJ{audit_code}\x0a" if not st.session_state.get('hide_audit_code', False) else ""
+
+    # 4. 地址固定字段 (DAG, DAI, DAJ, DAK) - 始终包含
+    address = inputs['address'].strip().upper()
+    city = inputs['city'].strip().upper()
+    zip_input = inputs['zip_input'].replace("-", "").strip().upper()
+    zip_code = zip_input
+    if len(zip_code) == 5: zip_code += "0000"
+
+    # 5. 构造 DL 子文件 (使用列表拼接，以确保最后的 \x0a 被正确移除)
+    
+    all_fields_list = [
+        "DL",
         f"DAQ{dl_number}\x0a",
         f"DCS{last_name}\x0a",
         f"DDEN{first_name}\x0a",
-        middle_name_field,                          # 动态 DAC
+        dac_field,
         f"DDFN\x0a",
         f"DAD\x0a",
         f"DDGN\x0a",
@@ -241,50 +220,59 @@ def generate_aamva_data_core(inputs):
         f"DBB{dob}\x0a",
         f"DBA{exp_date}\x0a",
         f"DBC{sex}\x0a",
-        physical_fields,                            # 动态插入 DAU, DAW, DCL, DAY, DAZ
-        address_fields,                             # 动态插入 DAG, DAH, DAI, DAJ, DAK
+        
+        # 身体特征 (DAU, DAY)
+        f"DAU{height} IN\x0a" if height else "",
+        f"DAY{eyes}\x0a" if eyes else "",
+
+        # 地址块 (DAG, DAH, DAI, DAJ, DAK)
+        f"DAG{address}\x0a",
+        dah_field, # 动态 DAH
+        f"DAI{city}\x0a",
+        f"DAJ{jurisdiction_code}\x0a",
+        f"DAK{zip_code}\x0a",
+        
+        # 证件/固定字段
         f"DCF{dd_code}\x0a",
         f"DCGUSA\x0a",
         f"DDA{dda_code}\x0a",
         f"DDB{rev_date}\x0a",
-        audit_field,                                # 动态插入 DCJ
-        f"DDL", # DDL / DDK 等如果需要，需要在这里以 "NONE\x0a" 或空字符串的方式处理
-    )
+        
+        # 结尾可选字段 (DCJ, DAZ, DCL, DAW)
+        dcj_field_with_sep,
+        f"DAZ{hair}\x0a" if hair else "",
+        f"DCL{race}\x0a" if race else "",
+        f"DAW{weight}\x0a" if weight else "", # 暂以 \x0a 结尾
+    ]
     
-    # 使用 "".join() 拼接所有部分
-    dl_content_body = "".join(dl_content_tuple)
+    # 6. 最终清理: 移除空字段，并确保最后一个字段没有 \x0a
+    
+    # 移除列表中的空字符串 (即被隐藏的字段)
+    all_fields_list = [f for f in all_fields_list if f]
+    
+    # 确保最后一个字段不以 \x0a 结尾 (AAMVA 规范)
+    if all_fields_list and all_fields_list[-1].endswith('\x0a'):
+        all_fields_list[-1] = all_fields_list[-1].rstrip('\x0a')
 
-    # 清理空字段（如 NONE\x0a）并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
-    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a") + "\x0d"
+    dl_content_body = "".join(all_fields_list)
+
+    # 7. 清理 NONE 字段并添加子文件结束符 \x0d
+    # 这一步将 NONE\x0a 替换为 \x0a，如果用户输入了 NONE (即空)，且该字段没有被隐藏。
+    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a") + "\x0d"
     
-    # --- 4. 动态计算头部和 Control Field ---
+    # --- 8. 动态计算头部和 Designator ---
     
-    # 1. DL 文件的实际长度
     len_dl = len(subfile_dl_final.encode('latin-1'))
-    
-    # 2. Control Field (C03) 长度 (固定 9 字节)
     control_field_len = 9
-    
-    # 3. AAMVA Header 前缀 (固定 21 字节)
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
     header_prefix_len = 21 
-    
-    # 4. Designator 长度 (1个 Designator = 10 字节)
     designator_len = 1 * 10 
     
-    # 5. 计算总字节长度 (Total Data Length)
     total_data_len = header_prefix_len + control_field_len + designator_len + len_dl
-
-    # 6. 构造 Control Field (C03XXXXXX)
     control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" 
-    
-    # 7. 计算 DL 文件的偏移量 (Designator 之后开始)
     offset_dl_val = header_prefix_len + control_field_len + designator_len 
-    
-    # 8. 构造 Designator
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
 
-    # 9. 最终拼接: Header Prefix + Control Field + Designator + Subfile
     full_data = aamva_header_prefix + control_field + des_dl + subfile_dl_final
     
     return full_data
@@ -308,7 +296,7 @@ def pdf417_generator_ui():
     
     st.info(f"选中的 IIN: **{JURISDICTION_MAP[jurisdiction_code]['iin']}** | 州代码: **{jurisdiction_code}** | 子文件数: **01 (强制)**")
 
-    # --- 默认数据 (使用 TX 风格默认值) ---
+    # --- 默认数据 ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
         'address': '8444 KALAMATH ST', 'apartment_num': 'APT B', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
@@ -317,30 +305,31 @@ def pdf417_generator_ui():
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
         'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'W'
     }
-    
     if JURISDICTION_MAP[jurisdiction_code].get('race'):
         default_data['race'] = JURISDICTION_MAP[jurisdiction_code]['race']
 
     # ========================================================
-    # 新功能：隐藏参数的控制区
+    # 新功能：动态参数控制区
     # ========================================================
     
     st.subheader("⚙️ 动态参数设置")
-    col_hide_1, col_hide_2, col_hide_3 = st.columns(3)
     
-    # 勾选框 1: 中间名 (DAC)
-    col_hide_1.checkbox("隐藏中间名 (DAC)", key='hide_middle_name', value=False, help="移除 DAC 字段。")
+    # 地址和审计码控制
+    col_hide_1, col_hide_2 = st.columns(2)
+    col_hide_1.checkbox("隐藏公寓号/附加地址 (DAH)", key='hide_apartment_num', value=False, help="移除 DAH 字段。")
+    col_hide_2.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=False, help="移除 DCJ 字段。")
     
-    # 勾选框 2: 地址块 (DAG/DAH/DAI/DAK/DAJ)
-    col_hide_2.checkbox("隐藏地址块 (含 DAH/邮编)", key='hide_address_block', value=False, help="移除所有地址相关字段。")
-
-    # 勾选框 3: 身体特征 (DAU/DAW/DAY/DAZ/DCL)
-    col_hide_3.checkbox("隐藏身体特征/分类 (DAU/DAW/DCL...)", key='hide_physical_block', value=False, help="移除身高、体重、眼睛、头发和民族等字段。")
-    
-    # 勾选框 4: 审计码 (DCJ)
-    st.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=False, help="移除 DCJ 字段。", )
-
+    # 身体特征独立控制
     st.markdown("---")
+    st.subheader("🏋️ 身体特征动态隐藏")
+    col_phy_1, col_phy_2, col_phy_3, col_phy_4, col_phy_5 = st.columns(5)
+    col_phy_1.checkbox("隐藏身高 (DAU)", key='hide_height', value=False)
+    col_phy_2.checkbox("隐藏体重 (DAW)", key='hide_weight', value=False)
+    col_phy_3.checkbox("隐藏眼睛 (DAY)", key='hide_eyes', value=False)
+    col_phy_4.checkbox("隐藏头发 (DAZ)", key='hide_hair', value=False)
+    col_phy_5.checkbox("隐藏民族/分类 (DCL)", key='hide_race', value=False) 
+    st.markdown("---")
+    
     
     # --- 1. 身份信息 ---
     st.subheader("👤 身份与姓名")
@@ -348,13 +337,8 @@ def pdf417_generator_ui():
     inputs = {}
     inputs['last_name'] = col1.text_input("姓氏 (DCS)", default_data['last_name'])
     inputs['first_name'] = col2.text_input("名 (DDEN)", default_data['first_name'])
-    
-    # 中间名输入字段依赖于勾选框状态
-    if not st.session_state.get('hide_middle_name', False):
-        inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'])
-    else:
-        inputs['middle_name'] = ""
-        col3.markdown("**中间名 (DAC)**: *字段已隐藏/移除*") 
+    # DAC: 始终可见
+    inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'], help="此字段始终包含。如留空，数据中将使用 'NONE'。")
     
     # --- 2. 证件信息 ---
     st.subheader("💳 证件信息")
@@ -368,12 +352,12 @@ def pdf417_generator_ui():
     inputs['end_code'] = col2.text_input("背书 (DCD)", default_data['end_code'])
     inputs['dd_code'] = col3.text_input("鉴别码 (DCF)", default_data['dd_code'])
     
-    # 审计码输入依赖于勾选框状态
+    # DCJ 审计码输入依赖于勾选框状态
     if not st.session_state.get('hide_audit_code', False):
         inputs['audit_code'] = st.text_input("审计信息/机构代码 (DCJ)", default_data['audit_code'])
     else:
         inputs['audit_code'] = ""
-        st.markdown("**审计信息/机构代码 (DCJ)**: *字段已隐藏/移除*")
+        st.markdown("**审计信息/机构代码 (DCJ)**: *已隐藏/移除*")
         
 
     inputs['jurisdiction_code'] = jurisdiction_code # 传递动态州码
@@ -389,47 +373,64 @@ def pdf417_generator_ui():
     # --- 4. 地址信息 ---
     st.subheader("🏠 地址信息")
     
-    if not st.session_state.get('hide_address_block', False):
-        # 如果不隐藏，正常显示所有地址输入字段
-        col1, col2, col_apt = st.columns([3, 1, 1])
-        inputs['address'] = col1.text_input("街道地址 (DAG)", default_data['address'])
-        inputs['city'] = col2.text_input("城市 (DAI)", default_data['city'])
-        inputs['apartment_num'] = col_apt.text_input("公寓号 (DAH)", default_data['apartment_num'], help="附加地址/公寓号")
-
-        col1, col2, col3 = st.columns([1, 1, 2])
-        col1.text(f"州/省 (DAJ): {jurisdiction_code}") 
-        col2.text(f"国家 (DCG): USA") 
-        inputs['zip_input'] = col3.text_input("邮编 (DAK)", default_data['zip_input'], help="输入 5 位数字，将自动补全为 9 位。")
-        
+    # 街道、城市固定可见
+    col1, col2, col_apt = st.columns([3, 1, 1])
+    inputs['address'] = col1.text_input("街道地址 (DAG)", default_data['address'])
+    inputs['city'] = col2.text_input("城市 (DAI)", default_data['city'])
+    
+    # DAH (公寓号) 独立控制
+    if not st.session_state.get('hide_apartment_num', False):
+        inputs['apartment_num'] = col_apt.text_input("公寓号/附加地址 (DAH)", default_data['apartment_num'], help="如留空，数据中将使用 'NONE'。")
     else:
-        # 如果隐藏，显示提示，并提供空值
-        st.warning("地址信息 (DAG/DAH/DAI/DAK) 已被勾选隐藏，数据流中将不包含这些字段。")
-        inputs['address'] = ""
         inputs['apartment_num'] = ""
-        inputs['city'] = ""
-        inputs['zip_input'] = ""
+        col_apt.markdown("**公寓号 (DAH)**: *已隐藏/移除*")
+
+    # 州/国家/邮编固定可见
+    col1, col2, col3 = st.columns([1, 1, 2])
+    col1.text(f"州/省 (DAJ): {jurisdiction_code}") 
+    col2.text(f"国家 (DCG): USA") 
+    inputs['zip_input'] = col3.text_input("邮编 (DAK)", default_data['zip_input'], help="输入 5 位数字，将自动补全为 9 位。")
         
     # --- 5. 物理特征 ---
     st.subheader("🏋️ 物理特征")
     
-    if not st.session_state.get('hide_physical_block', False):
-        col1, col2, col3, col4, col5 = st.columns(5)
-        inputs['sex'] = col1.selectbox("性别 (DBC)", options=['1', '2', '9'], index=['1', '2', '9'].index(default_data['sex']))
+    col_sex, col_h, col_w, col_e, col_hair = st.columns(5)
+    inputs['sex'] = col_sex.selectbox("性别 (DBC)", options=['1', '2', '9'], index=['1', '2', '9'].index(default_data['sex']))
+    
+    # DAU (身高)
+    if not st.session_state.get('hide_height', False):
+        inputs['height_input'] = col_h.text_input("身高 (DAU)", default_data['height_input'], help="总英寸 (如 069) 或 feet/inches (如 509)。")
+    else:
+        inputs['height_input'] = ""
+        col_h.markdown("**身高 (DAU)**: *已隐藏/移除*")
+
+    # DAW (体重)
+    if not st.session_state.get('hide_weight', False):
+        inputs['weight'] = col_w.text_input("体重 (DAW)", default_data['weight'], help="磅 (LB)")
+    else:
+        inputs['weight'] = ""
+        col_w.markdown("**体重 (DAW)**: *已隐藏/移除*")
+
+    # DAY (眼睛)
+    if not st.session_state.get('hide_eyes', False):
+        inputs['eyes'] = col_e.text_input("眼睛颜色 (DAY)", default_data['eyes'])
+    else:
+        inputs['eyes'] = ""
+        col_e.markdown("**眼睛 (DAY)**: *已隐藏/移除*")
+
+    # DAZ (头发)
+    if not st.session_state.get('hide_hair', False):
+        inputs['hair'] = col_hair.text_input("头发颜色 (DAZ)", default_data['hair'])
+    else:
+        inputs['hair'] = ""
+        col_hair.markdown("**头发 (DAZ)**: *已隐藏/移除*")
         
-        # 身体特征输入字段
-        inputs['height_input'] = col2.text_input("身高 (DAU)", default_data['height_input'], help="总英寸 (如 069) 或 feet/inches (如 509)。")
-        inputs['weight'] = col3.text_input("体重 (DAW)", default_data['weight'], help="磅 (LB)")
-        inputs['eyes'] = col4.text_input("眼睛颜色 (DAY)", default_data['eyes'])
-        inputs['hair'] = col5.text_input("头发颜色 (DAZ)", default_data['hair'])
+    # DCL (民族/分类)
+    if not st.session_state.get('hide_race', False):
         inputs['race'] = st.text_input("民族/其他分类 (DCL)", default_data['race'], help=f"例如 {default_data['race']}")
     else:
-        st.warning("身体特征/分类 (DAU/DAW/DCL/DAY/DAZ) 已被勾选隐藏，数据流中将不包含这些字段。")
-        inputs['sex'] = default_data['sex'] # 保持性别可见，但相关身体特征隐藏
-        inputs['height_input'] = ""
-        inputs['weight'] = ""
-        inputs['eyes'] = ""
-        inputs['hair'] = ""
         inputs['race'] = ""
+        st.markdown("**民族/分类 (DCL)**: *已隐藏/移除*")
 
     st.markdown("---")
     
@@ -462,7 +463,7 @@ def pdf417_generator_ui():
                 try:
                     header_claimed_len = int(header_claimed_len_str)
                     if header_claimed_len != actual_len:
-                         st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。严格解析器会拒绝。")
+                         st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。")
                     else:
                          st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
                 except ValueError:
