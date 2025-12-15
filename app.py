@@ -5,8 +5,6 @@ import io
 import math
 import pandas as pd
 import base64
-import os
-import subprocess
 
 # --- 引入外部库 ---
 try:
@@ -17,11 +15,10 @@ except ImportError:
     def render_image(*args, **kwargs): return Image.new('RGB', (400, 100), color='white')
 
 
-# ==================== 0. 配置与 51 州 IIN 映射 (最终版) ====================
+# ==================== 0. 配置与 51 州 IIN 映射 (保持不变) ====================
 
-# 州代码到 IIN 和版本信息的映射 (AAMVA V09/D20-2020 兼容)
 JURISDICTION_MAP = {
-    # 东北地区 (Northeast)
+    # ... (保持您的 JURISDICTION_MAP 不变) ...
     "ME": {"name": "Maine - 缅因州", "iin": "636021", "jver": "01", "race": "W"},
     "VT": {"name": "Vermont - 佛蒙特州", "iin": "636044", "jver": "01", "race": "W"},
     "NH": {"name": "New Hampshire - 新罕布什尔州", "iin": "636029", "jver": "01", "race": "W"},
@@ -31,7 +28,6 @@ JURISDICTION_MAP = {
     "NY": {"name": "New York - 纽约州", "iin": "636034", "jver": "01", "race": "W"},
     "NJ": {"name": "New Jersey - 新泽西州", "iin": "636030", "jver": "01", "race": "W"},
     "PA": {"name": "Pennsylvania - 宾夕法尼亚州", "iin": "636038", "jver": "01", "race": "W"},
-    # 中西部地区 (Midwest)
     "OH": {"name": "Ohio - 俄亥俄州", "iin": "636035", "jver": "01", "race": "W"},
     "IN": {"name": "Indiana - 印第安纳州", "iin": "636014", "jver": "01", "race": "W"},
     "IL": {"name": "Illinois - 伊利诺伊州", "iin": "636013", "jver": "01", "race": "W"},
@@ -44,7 +40,6 @@ JURISDICTION_MAP = {
     "SD": {"name": "South Dakota - 南达科他州", "iin": "636042", "jver": "01", "race": "W"},
     "NE": {"name": "Nebraska - 内布拉斯加州", "iin": "636028", "jver": "01", "race": "W"},
     "KS": {"name": "Kansas - 堪萨斯州", "iin": "636016", "jver": "01", "race": "W"},
-    # 南部地区 (South)
     "DE": {"name": "Delaware - 特拉华州", "iin": "636004", "jver": "01", "race": "W"},
     "MD": {"name": "Maryland - 马里兰州", "iin": "636020", "jver": "01", "race": "W"},
     "VA": {"name": "Virginia - 弗吉尼亚州", "iin": "636046", "jver": "01", "race": "W"},
@@ -61,11 +56,10 @@ JURISDICTION_MAP = {
     "LA": {"name": "Louisiana - 路易斯安那州", "iin": "636019", "jver": "01", "race": "W"},
     "OK": {"name": "Oklahoma - 俄克拉荷马州", "iin": "636036", "jver": "01", "race": "W"},
     "TX": {"name": "Texas - 德克萨斯州", "iin": "636043", "jver": "01", "race": "W"},
-    # 西部地区 (West)
     "MT": {"name": "Montana - 蒙大拿州", "iin": "636027", "jver": "01", "race": "W"},
     "ID": {"name": "Idaho - 爱达荷州", "iin": "636012", "jver": "01", "race": "W"},
     "WY": {"name": "Wyoming - 怀俄明州", "iin": "636049", "jver": "01", "race": "W"},
-    "CO": {"name": "Colorado - 科罗拉多州", "iin": "636020", "jver": "01", "race": "CLW"}, # 特殊的 DCL 码
+    "CO": {"name": "Colorado - 科罗拉多州", "iin": "636020", "jver": "01", "race": "CLW"}, 
     "UT": {"name": "Utah - 犹他州", "iin": "636045", "jver": "01", "race": "W"},
     "AZ": {"name": "Arizona - 亚利桑那州", "iin": "636006", "jver": "01", "race": "W"},
     "NM": {"name": "New Mexico - 新墨西哥州", "iin": "636031", "jver": "01", "race": "W"},
@@ -75,7 +69,6 @@ JURISDICTION_MAP = {
     "CA": {"name": "California - 加利福尼亚州", "iin": "636000", "jver": "00", "race": "W"},
     "NV": {"name": "Nevada - 内华达州", "iin": "636032", "jver": "01", "race": "W"},
     "HI": {"name": "Hawaii - 夏威夷州", "iin": "636009", "jver": "01", "race": "W"},
-    # 地区 (Territories/DC)
     "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636007", "jver": "01", "race": "W"},
 }
 
@@ -92,7 +85,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ==================== 1. 核心辅助函数 ====================
+# ==================== 1. 核心辅助函数 (保持不变) ====================
 
 def get_hex_dump_str(raw_bytes):
     """生成易读的 HEX 数据视图"""
@@ -139,10 +132,10 @@ def convert_height_to_inches_ui(height_str):
     return f"{total_inches:03d}"
 
 
-# ==================== 2. AAMVA 生成核心逻辑 (动态计算头部) ====================
+# ==================== 2. AAMVA 生成核心逻辑 (单文件修正) ====================
 
 def generate_aamva_data_core(inputs):
-    """根据 Streamlit 输入字典，生成 AAMVA PDF417 原始数据流 (动态计算头部)"""
+    """根据 Streamlit 输入字典，生成 AAMVA PDF417 原始数据流 (修正为单子文件 DL)"""
     
     # 1. 获取州配置
     jurisdiction_code = inputs['jurisdiction_code']
@@ -151,7 +144,7 @@ def generate_aamva_data_core(inputs):
     iin = config['iin']
     jurisdiction_version = config['jver']
     
-    # 2. 清洗输入数据
+    # 2. 清洗输入数据 (保持不变)
     first_name = inputs['first_name'].strip().upper()
     middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
     last_name = inputs['last_name'].strip().upper()
@@ -182,9 +175,11 @@ def generate_aamva_data_core(inputs):
     
     # --- 3. 构造子文件 DL (AAMVA V09 核心结构) ---
     aamva_version = "09"
-    num_entries = "02" 
     
-    # 构造 DL 子文件内容（不含头和 Designators）
+    # **核心修改 1: 子文件数量改为 1**
+    num_entries = "01" 
+    
+    # 构造 DL 子文件内容（使用 \x0a (LF) 作为字段分隔符）
     dl_content_body = (
         f"DL"                                    
         f"DAQ{dl_number}\x0a"                      
@@ -213,62 +208,55 @@ def generate_aamva_data_core(inputs):
         f"DDB{rev_date}\x0a"                       
         f"DAZ{hair}\x0a"                           
         f"DCJ{audit_code}\x0a"                     
-        f"DCL{race}\x0a"                           # DCL 后是 \x0a 
-        f"DAW{weight}"                             # DAW 后无分隔符
+        f"DCL{race}\x0a"                           
+        f"DAW{weight}"                             
     )
     
-    # 清理空字段，并最终拼接 DL 子文件
+    # 清理空字段，并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
     subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a") + "\x0d"
 
-    # --- 4. 构建 ZC 子文件 (Data 2) ---
-    subfile_zc_final = f"ZC{f'ZCAC'}\x0d"
+    # **核心修改 2: 移除 ZC 子文件**
+    # subfile_zc_final = f"ZC{f'ZCAC'}\x0d" 
 
-    # --- 5. 动态计算头部和偏移量 (关键修正) ---
+    # --- 4. 动态计算头部和偏移量 (关键修正) ---
     
-    # DL/ZC 文件的实际长度
+    # DL 文件的实际长度
     len_dl = len(subfile_dl_final.encode('latin-1'))
-    len_zc = len(subfile_zc_final.encode('latin-1'))
     
-    # Header Control Field (C03170007) 的固定长度
+    # Header Control Field (C03XXXXXX) 的固定长度
     control_field_len = 9 
     
     # AAMVA Header (固定长度)
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
-    aamva_header_len = 21 # 字节长度 (@\n\x1e\rANSI 6360XX090102)
+    aamva_header_len = 21 
     
-    # Subfile Designator 长度 (2个，每个 10 字节)
-    designator_len = 2 * 10 
+    # **核心修改 3: Designator 长度改为 1 个 (10 字节)**
+    designator_len = 1 * 10 
     
     # Total File Length (C03XX)
-    # 总长度 = AAMVA Header (21) + Control Field (9) + Designators (20) + DL Content + ZC Content
-    total_data_len = aamva_header_len + control_field_len + designator_len + len_dl + len_zc
+    # 总长度 = Header Prefix (21) + Control Field (9) + Designator (10) + DL Content 
+    total_data_len = aamva_header_len + control_field_len + designator_len + len_dl
     
-    # Offset of DL file: DL 文件从 (AAMVA Header + Control Field + Designators) 之后开始
+    # Offset of DL file: DL 文件在 Designator 之后开始
     offset_dl_val = aamva_header_len + control_field_len + designator_len 
     
-    # Offset of ZC file: ZC 文件从 (DL Offset + DL Length) 之后开始
-    offset_zc_val = offset_dl_val + len_dl
-    
-    # --- 6. 构造最终 Designators 和 Header ---
+    # --- 5. 构造最终 Designator 和 Header ---
     
     # 构造 Control Field (C03XXXXXX)
-    # C03 + Total Data Length (5 chars) + Number of Subfiles (2 chars, here 07 for 2 files)
-    # AAMVA D20 规定 Total File Length 占 5 字节
-    control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" # 例如 C030032402
+    control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" 
     
-    # 构造 Designators (类型 + 偏移量 + 长度)
+    # 构造 Designator (类型 + 偏移量 + 长度)
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
-    des_zc = f"ZC{offset_zc_val:04d}{len_zc:04d}" 
     
-    # 最终拼接
-    return aamva_header_prefix + control_field + des_dl + des_zc + subfile_dl_final + subfile_zc_final
+    # 最终拼接: Header Prefix + Control Field + Designator (仅 DL) + Subfile (仅 DL)
+    return aamva_header_prefix + control_field + des_dl + subfile_dl_final
 
 
-# ==================== 3. Streamlit 生成界面 UI (不变) ====================
+# ==================== 3. Streamlit 生成界面 UI (保持不变) ====================
 
 def pdf417_generator_ui():
     st.title("💳 AAMVA PDF417 数据生成专家")
-    st.caption("基于 AAMVA D20-2020 标准，支持 51 个管辖区动态 IIN/格式生成。")
+    st.caption("基于 AAMVA D20-2020 标准，修正为**单子文件 DL (Num Entries = 01)** 模式。")
 
     # --- 状态选择 ---
     jurisdictions = {v['name']: k for k, v in JURISDICTION_MAP.items()}
@@ -280,16 +268,16 @@ def pdf417_generator_ui():
                                  index=sorted_names.index(default_state_name))
     jurisdiction_code = jurisdictions[selected_name]
     
-    st.info(f"选中的 IIN: **{JURISDICTION_MAP[jurisdiction_code]['iin']}** | 州代码: **{jurisdiction_code}**")
+    st.info(f"选中的 IIN: **{JURISDICTION_MAP[jurisdiction_code]['iin']}** | 州代码: **{jurisdiction_code}** | 子文件数: **01**")
 
-    # --- 默认数据 ---
+    # --- 默认数据 (保持不变) ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
         'address': '8444 KALAMATH ST', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
         'dob': '09/23/1990', 'exp_date': '09/23/2026', 'iss_date': '04/20/2021', 'rev_date': '10302015',
         'dl_number': '171625540', 'class_code': 'R', 'rest_code': 'C', 'end_code': 'NONE',
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
-        'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'CLW' # race 默认 CLW
+        'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'CLW'
     }
     
     if JURISDICTION_MAP[jurisdiction_code].get('race'):
@@ -316,7 +304,7 @@ def pdf417_generator_ui():
     inputs['dd_code'] = col3.text_input("鉴别码 (DCF)", default_data['dd_code'])
     
     inputs['audit_code'] = st.text_input("审计信息/机构代码 (DCJ)", default_data['audit_code'])
-    inputs['jurisdiction_code'] = jurisdiction_code # 传递动态州码
+    inputs['jurisdiction_code'] = jurisdiction_code 
 
     # --- 3. 日期信息 ---
     st.subheader("📅 日期 (MMDDYYYY)")
@@ -357,21 +345,17 @@ def pdf417_generator_ui():
 
         with st.spinner("正在生成 AAMVA 数据并编码..."):
             try:
-                # 核心数据生成
                 aamva_data = generate_aamva_data_core(inputs)
                 
-                # 编码 PDF417 (使用 latin-1 编码)
                 aamva_bytes = aamva_data.encode('latin-1')
                 codes = encode(aamva_bytes, columns=13, security_level=5)
-                # 渲染图片
+                
                 image = render_image(codes, scale=4, ratio=3, padding=10) 
                 
-                # 将 PIL 图像转换为字节流
                 buf = io.BytesIO()
                 image.save(buf, format="PNG")
                 png_image_bytes = buf.getvalue()
                 
-                # 警告提示：检查实际长度是否匹配头部计算
                 actual_len = len(aamva_bytes)
                 st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
 
