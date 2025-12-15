@@ -2,7 +2,7 @@
 """
 AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING AND DEFAULTS)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：修正了 1 字节长度错误，并默认隐藏 DCL 字段。
+特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。修正了头部长度计算偏差。
 """
 import streamlit as st
 from PIL import Image
@@ -167,8 +167,8 @@ def generate_aamva_data_core(inputs):
     rev_date = clean_date_input(inputs['rev_date'])
     dl_number = inputs['dl_number'].strip().upper()
     class_code = inputs['class_code'].strip().upper()
-    rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'] else "NONE"
-    end_code = inputs['end_code'].strip().upper() if inputs['end_code'] else "NONE"
+    rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'].strip() else ""
+    end_code = inputs['end_code'].strip().upper() if inputs['end_code'].strip() else ""
     dd_code = inputs['dd_code'].strip().upper()
     dda_code = inputs['dda_code'].strip().upper()
     sex = inputs['sex'].strip()
@@ -192,11 +192,13 @@ def generate_aamva_data_core(inputs):
     dau_field = f"DAU{height} IN\x0a" if height else ""
     
     # DAY (眼睛)
-    eyes = inputs['eyes'].strip().upper() if not st.session_state.get('hide_eyes', False) else ""
+    eyes = inputs['eyes'].strip().upper() if inputs['eyes'].strip() else "NONE"
+    eyes = eyes if not st.session_state.get('hide_eyes', False) else ""
     day_field = f"DAY{eyes}\x0a" if eyes else ""
     
     # DAZ (头发)
-    hair = inputs['hair'].strip().upper() if not st.session_state.get('hide_hair', False) else ""
+    hair = inputs['hair'].strip().upper() if inputs['hair'].strip() else "NONE"
+    hair = hair if not st.session_state.get('hide_hair', False) else ""
     daz_field = f"DAZ{hair}\x0a" if hair else ""
     
     # DCL (民族/分类)
@@ -205,7 +207,8 @@ def generate_aamva_data_core(inputs):
     dcl_field = f"DCL{race}\x0a" if race else ""
     
     # DAW (体重)
-    weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
+    weight = inputs['weight'].strip().upper() if inputs['weight'].strip() else "NONE"
+    weight = weight if not st.session_state.get('hide_weight', False) else ""
     daw_field = f"DAW{weight}\x0a" if weight else "" # 暂以 \x0a 结尾
 
     # 审计码 (DCJ) - 独立隐藏
@@ -231,8 +234,11 @@ def generate_aamva_data_core(inputs):
         f"DAD\x0a",
         f"DDGN\x0a",
         f"DCA{class_code}\x0a",
-        f"DCB{rest_code}\x0a",
-        f"DCD{end_code}\x0a",
+        
+        # DCB/DCD 只有在有值时才包含 \x0a
+        f"DCB{rest_code}\x0a" if rest_code else "",
+        f"DCD{end_code}\x0a" if end_code else "",
+        
         f"DBD{iss_date}\x0a",
         f"DBB{dob}\x0a",
         f"DBA{exp_date}\x0a",
@@ -271,6 +277,7 @@ def generate_aamva_data_core(inputs):
     dl_content_body = "".join(all_fields_list)
 
     # 7. 清理 NONE 字段并添加子文件结束符 \x0d
+    # 修正：将所有 NONE\x0a 替换为 \x0a，然后添加 \x0d。
     subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a") + "\x0d"
     
     # --- 8. 动态计算头部和 Control Field ---
