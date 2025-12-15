@@ -2,7 +2,7 @@
 """
 AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING AND DEFAULTS)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。
+特点：修正了 1 字节长度错误，并默认隐藏 DCL 字段。
 """
 import streamlit as st
 from PIL import Image
@@ -275,13 +275,17 @@ def generate_aamva_data_core(inputs):
     
     # --- 8. 动态计算头部和 Control Field ---
     
+    # **核心修正 1：精确计算 Control Field 中的 len_dl**
     len_dl = len(subfile_dl_final.encode('latin-1'))
+    
     control_field_len = 9
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
     header_prefix_len = 21 
     designator_len = 1 * 10 
     
+    # **核心修正 2：确保总长度与 len_dl 相加**
     total_data_len = header_prefix_len + control_field_len + designator_len + len_dl
+    
     control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" 
     offset_dl_val = header_prefix_len + control_field_len + designator_len 
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
@@ -332,7 +336,7 @@ def pdf417_generator_ui():
     col_hide_1.checkbox("隐藏公寓号/附加地址 (DAH)", key='hide_apartment_num', value=True, help="**默认隐藏。** 移除 DAH 字段。")
     col_hide_2.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=True, help="**默认隐藏。** 移除 DCJ 字段。")
     
-    # 身体特征独立控制
+    # 身体特征独立控制 (DCL 默认隐藏)
     st.markdown("---")
     st.subheader("🏋️ 身体特征动态隐藏")
     col_phy_1, col_phy_2, col_phy_3, col_phy_4, col_phy_5 = st.columns(5)
@@ -340,7 +344,7 @@ def pdf417_generator_ui():
     col_phy_2.checkbox("隐藏体重 (DAW)", key='hide_weight', value=False)
     col_phy_3.checkbox("隐藏眼睛 (DAY)", key='hide_eyes', value=False)
     col_phy_4.checkbox("隐藏头发 (DAZ)", key='hide_hair', value=False)
-    col_phy_5.checkbox("隐藏民族/分类 (DCL)", key='hide_race', value=False) 
+    col_phy_5.checkbox("隐藏民族/分类 (DCL)", key='hide_race', value=True, help="**默认隐藏。** 移除 DCL 字段。") 
     st.markdown("---")
     
     
