@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH PRECISE HIDING AND DEFAULTS)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
 特点：精细控制 DAH, DAU, DAW, DAY, DAZ, DCL 和 DCJ 的动态隐藏。
 """
@@ -184,21 +184,27 @@ def generate_aamva_data_core(inputs):
     dah_field = f"DAH{apartment_num}\x0a" if not st.session_state.get('hide_apartment_num', False) else ""
     
     # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
+    
+    # DAU (身高)
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
     dau_field = f"DAU{height} IN\x0a" if height else ""
     
+    # DAY (眼睛)
     eyes = inputs['eyes'].strip().upper() if not st.session_state.get('hide_eyes', False) else ""
     day_field = f"DAY{eyes}\x0a" if eyes else ""
     
+    # DAZ (头发)
     hair = inputs['hair'].strip().upper() if not st.session_state.get('hide_hair', False) else ""
     daz_field = f"DAZ{hair}\x0a" if hair else ""
     
+    # DCL (民族/分类)
     race_default = inputs['race'].strip().upper() if inputs['race'].strip() else config['race']
     race = race_default if not st.session_state.get('hide_race', False) else ""
     dcl_field = f"DCL{race}\x0a" if race else ""
     
+    # DAW (体重)
     weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
     daw_field = f"DAW{weight}\x0a" if weight else "" # 暂以 \x0a 结尾
 
@@ -265,7 +271,6 @@ def generate_aamva_data_core(inputs):
     dl_content_body = "".join(all_fields_list)
 
     # 7. 清理 NONE 字段并添加子文件结束符 \x0d
-    # 这一步将所有 NONE\x0a 替换为 \x0a
     subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a") + "\x0d"
     
     # --- 8. 动态计算头部和 Control Field ---
@@ -317,15 +322,15 @@ def pdf417_generator_ui():
         default_data['race'] = JURISDICTION_MAP[jurisdiction_code]['race']
 
     # ========================================================
-    # 新功能：动态参数控制区
+    # 动态参数控制区 (新功能)
     # ========================================================
     
     st.subheader("⚙️ 动态参数设置")
     
-    # 地址和审计码控制
+    # DAH 和 DCJ 默认隐藏
     col_hide_1, col_hide_2 = st.columns(2)
-    col_hide_1.checkbox("隐藏公寓号/附加地址 (DAH)", key='hide_apartment_num', value=False, help="移除 DAH 字段。")
-    col_hide_2.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=False, help="移除 DCJ 字段。")
+    col_hide_1.checkbox("隐藏公寓号/附加地址 (DAH)", key='hide_apartment_num', value=True, help="**默认隐藏。** 移除 DAH 字段。")
+    col_hide_2.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=True, help="**默认隐藏。** 移除 DCJ 字段。")
     
     # 身体特征独立控制
     st.markdown("---")
@@ -423,3 +428,98 @@ def pdf417_generator_ui():
     if not st.session_state.get('hide_eyes', False):
         inputs['eyes'] = col_e.text_input("眼睛颜色 (DAY)", default_data['eyes'])
     else:
+        inputs['eyes'] = ""
+        col_e.markdown("**眼睛 (DAY)**: *已隐藏/移除*")
+
+    # DAZ (头发)
+    if not st.session_state.get('hide_hair', False):
+        inputs['hair'] = col_hair.text_input("头发颜色 (DAZ)", default_data['hair'])
+    else:
+        inputs['hair'] = ""
+        col_hair.markdown("**头发 (DAZ)**: *已隐藏/移除*")
+        
+    # DCL (民族/分类)
+    if not st.session_state.get('hide_race', False):
+        inputs['race'] = st.text_input("民族/其他分类 (DCL)", default_data['race'], help=f"例如 {default_data['race']}")
+    else:
+        inputs['race'] = ""
+        st.markdown("**民族/分类 (DCL)**: *已隐藏/移除*")
+
+    st.markdown("---")
+    
+    # --- 6. 生成按钮 ---
+    if st.button("🚀 生成 PDF417 条码", type="primary"):
+        if not all([inputs['dl_number'], inputs['last_name'], inputs['dob']]):
+            st.error("请输入驾照号码、姓氏和出生日期 (DOB)。")
+            return
+
+        with st.spinner("正在生成 AAMVA 数据并编码..."):
+            try:
+                # 核心数据生成
+                aamva_data = generate_aamva_data_core(inputs)
+                
+                # 编码 PDF417 (使用 latin-1 编码)
+                aamva_bytes = aamva_data.encode('latin-1')
+                codes = encode(aamva_bytes, columns=13, security_level=5)
+                # 渲染图片
+                image = render_image(codes, scale=4, ratio=3, padding=10) 
+                
+                # 将 PIL 图像转换为字节流
+                buf = io.BytesIO()
+                image.save(buf, format="PNG")
+                png_image_bytes = buf.getvalue()
+                
+                actual_len = len(aamva_bytes)
+                
+                # 警告检查: 检查头部声明长度是否与实际长度匹配
+                c03_start_index = aamva_data.find("C03")
+                
+                if c03_start_index != -1:
+                    header_claimed_len_str = aamva_data[c03_start_index + 3 : c03_start_index + 8] 
+                    
+                    try:
+                        header_claimed_len = int(header_claimed_len_str)
+                        if header_claimed_len != actual_len:
+                            st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。")
+                        else:
+                            st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
+                            
+                    except ValueError:
+                        st.error(f"⚠️ **结构错误:** 无法解析 Control Field 的长度部分 ('{header_claimed_len_str}')。")
+                        
+                else:
+                    st.error("⚠️ **结构错误:** 未能在数据流中找到 Control Field (C03) 标识符。")
+
+
+                # --- 结果展示 ---
+                col_img, col_download = st.columns([1, 1])
+
+                with col_img:
+                    st.image(png_image_bytes, caption="PDF417 条码图像", use_column_width=True)
+                
+                with col_download:
+                    st.download_button(
+                        label="💾 下载原始 AAMVA 数据 (.txt)",
+                        data=aamva_bytes,
+                        file_name=f"{jurisdiction_code}_DL_RAW.txt",
+                        mime="text/plain"
+                    )
+                    st.download_button(
+                        label="🖼️ 下载条码图片 (.png)",
+                        data=png_image_bytes, 
+                        file_name=f"{jurisdiction_code}_PDF417.png",
+                        mime="image/png"
+                    )
+
+                st.markdown("---")
+                st.subheader("底层 AAMVA 数据流 (HEX/ASCII)")
+                st.code(get_hex_dump_str(aamva_bytes), language='text')
+
+            except Exception as e:
+                st.error(f"生成失败：请检查输入格式是否正确。错误详情：{e}")
+
+
+# ==================== 4. 网页主程序区 ====================
+
+if __name__ == "__main__":
+    pdf417_generator_ui()
