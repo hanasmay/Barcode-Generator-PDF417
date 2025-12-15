@@ -1,0 +1,7 @@
+streamlit
+numpy
+pandas
+Pillow
+opencv-python
+zxing-cpp
+pdf417
