@@ -284,7 +284,9 @@ def generate_aamva_data_core(inputs):
     # **核心修正 1：精确计算 Control Field 中的 len_dl**
     len_dl = len(subfile_dl_final.encode('latin-1'))
     
-    control_field_len = 9
+    # **修正 1：Control Field 长度必须为 10 (C03 + 5长度 + 2文件数)**
+    control_field_len = 10 
+    
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
     header_prefix_len = 21 
     designator_len = 1 * 10 
