@@ -1,24 +1,32 @@
 # -*- coding: utf-8 -*-
+"""
+AAMVA PDF417 50-State DL Generator (FINAL VERSION)
+功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
+特点：强制单 DL 子文件 (Num Entries = 01)，动态 IIN/JVersion，
+      精确头部计算，并支持动态隐藏中间名和地址信息。
+"""
 import streamlit as st
 from PIL import Image
 import io 
 import math
 import pandas as pd
 import base64
+import os
+import subprocess
 
 # --- 引入外部库 ---
 try:
     from pdf417 import encode, render_image
 except ImportError:
-    st.warning("警告：PDF417 编码库 (pdf417) 未安装。条码图像功能将使用占位符。请运行 `pip install pdf417`。")
+    st.warning("警告：PDF417 编码库 (pdf417) 未安装。请运行 `pip install pdf417`。")
     def encode(*args, **kwargs): return []
     def render_image(*args, **kwargs): return Image.new('RGB', (400, 100), color='white')
 
 
-# ==================== 0. 配置与 51 州 IIN 映射 (保持不变) ====================
+# ==================== 0. 配置与 51 州 IIN 映射 ====================
 
+# 州代码到 IIN 和版本信息的映射 (AAMVA V09/D20-2020 兼容)
 JURISDICTION_MAP = {
-    # ... (保持您的 JURISDICTION_MAP 不变) ...
     "ME": {"name": "Maine - 缅因州", "iin": "636021", "jver": "01", "race": "W"},
     "VT": {"name": "Vermont - 佛蒙特州", "iin": "636044", "jver": "01", "race": "W"},
     "NH": {"name": "New Hampshire - 新罕布什尔州", "iin": "636029", "jver": "01", "race": "W"},
@@ -72,7 +80,7 @@ JURISDICTION_MAP = {
     "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636007", "jver": "01", "race": "W"},
 }
 
-st.set_page_config(page_title="AAMVA PDF417 生成专家", page_icon="💳", layout="wide")
+st.set_page_config(page_title="AAMVA PDF417 50-州 生成专家", page_icon="💳", layout="wide")
 
 # 注入 CSS：优化布局
 st.markdown("""
@@ -85,7 +93,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# ==================== 1. 核心辅助函数 (保持不变) ====================
+# ==================== 1. 核心辅助函数 ====================
 
 def get_hex_dump_str(raw_bytes):
     """生成易读的 HEX 数据视图"""
@@ -132,32 +140,32 @@ def convert_height_to_inches_ui(height_str):
     return f"{total_inches:03d}"
 
 
-# ==================== 2. AAMVA 生成核心逻辑 (单文件修正) ====================
+# ==================== 2. AAMVA 生成核心逻辑 (强制单文件模式) ====================
 
 def generate_aamva_data_core(inputs):
-    """根据 Streamlit 输入字典，生成 AAMVA PDF417 原始数据流 (修正为单子文件 DL)"""
+    """根据 Streamlit 输入字典，生成 AAMVA PDF417 原始数据流 (强制单文件模式)"""
     
     # 1. 获取州配置
     jurisdiction_code = inputs['jurisdiction_code']
     config = JURISDICTION_MAP.get(jurisdiction_code)
     
+    # 动态版本控制
     iin = config['iin']
     jurisdiction_version = config['jver']
+    aamva_version = "09" # 通用版本
     
-    # 2. 清洗输入数据 (保持不变)
-    first_name = inputs['first_name'].strip().upper()
-    middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
+    # **核心结构：强制使用 01 个子文件**
+    num_entries = "01" 
+    
+    # 2. 清洗输入数据
+    # 基础字段（不依赖隐藏状态）
     last_name = inputs['last_name'].strip().upper()
-    address = inputs['address'].strip().upper()
-    city = inputs['city'].strip().upper()
-    zip_code = inputs['zip_input'].replace("-", "").strip().upper()
-    if len(zip_code) == 5: zip_code += "0000"
-    
+    first_name = inputs['first_name'].strip().upper()
+
     dob = clean_date_input(inputs['dob'])
     exp_date = clean_date_input(inputs['exp_date'])
     iss_date = clean_date_input(inputs['iss_date'])
     rev_date = clean_date_input(inputs['rev_date'])
-
     dl_number = inputs['dl_number'].strip().upper()
     class_code = inputs['class_code'].strip().upper()
     rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'] else "NONE"
@@ -165,7 +173,6 @@ def generate_aamva_data_core(inputs):
     dd_code = inputs['dd_code'].strip().upper()
     audit_code = inputs['audit_code'].strip().upper()
     dda_code = inputs['dda_code'].strip().upper()
-    
     sex = inputs['sex'].strip()
     height = convert_height_to_inches_ui(inputs['height_input'])
     weight = inputs['weight'].strip().upper()
@@ -173,19 +180,41 @@ def generate_aamva_data_core(inputs):
     hair = inputs['hair'].strip().upper()
     race = inputs['race'].strip().upper() if inputs['race'] else config['race']
     
-    # --- 3. 构造子文件 DL (AAMVA V09 核心结构) ---
-    aamva_version = "09"
+    # --- 动态构建 DL 子文件内容 ---
     
-    # **核心修改 1: 子文件数量改为 1**
-    num_entries = "01" 
+    # 1. 中间名 (DAC) - 依赖 Session State
+    middle_name_field = ""
+    if not st.session_state.get('hide_middle_name', False):
+         middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
+         middle_name_field = f"DAC{middle_name}\x0a"
+    else:
+         # 如果隐藏，需要确保在 inputs['middle_name'] 为空时 DAC 字段不出现在 DL content body 中
+         pass 
+
+    # 2. 地址信息 (DAG, DAI, DAJ, DAK) - 依赖 Session State
+    address_fields = ""
+    if not st.session_state.get('hide_address', False):
+        address = inputs['address'].strip().upper()
+        city = inputs['city'].strip().upper()
+        zip_input = inputs['zip_input'].replace("-", "").strip().upper()
+        zip_code = zip_input
+        if len(zip_code) == 5: zip_code += "0000"
+
+        address_fields = (
+            f"DAG{address}\x0a"                      
+            f"DAI{city}\x0a"                           
+            f"DAJ{jurisdiction_code}\x0a"              
+            f"DAK{zip_code}\x0a"
+        )
+    # 否则，address_fields 为空字符串 ""
     
-    # 构造 DL 子文件内容（使用 \x0a (LF) 作为字段分隔符）
+    # 3. 构造 DL 子文件 (动态插入字段)
     dl_content_body = (
         f"DL"                                    
         f"DAQ{dl_number}\x0a"                      
         f"DCS{last_name}\x0a"                      
         f"DDEN{first_name}\x0a"                    
-        f"DAC{middle_name}\x0a"                    
+        middle_name_field +                         # 动态插入 DAC (中间名)
         f"DDFN\x0a"                                
         f"DAD\x0a"                                 
         f"DDGN\x0a"                                
@@ -198,10 +227,7 @@ def generate_aamva_data_core(inputs):
         f"DBC{sex}\x0a"
         f"DAU{height} IN\x0a"                      
         f"DAY{eyes}\x0a"                           
-        f"DAG{address}\x0a"                     
-        f"DAI{city}\x0a"                           
-        f"DAJ{jurisdiction_code}\x0a"              
-        f"DAK{zip_code}\x0a"                       
+        address_fields +                            # 动态插入地址块
         f"DCF{dd_code}\x0a"                         
         f"DCGUSA\x0a"                              
         f"DDA{dda_code}\x0a"
@@ -212,84 +238,103 @@ def generate_aamva_data_core(inputs):
         f"DAW{weight}"                             
     )
     
-    # 清理空字段，并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
-    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a") + "\x0d"
-
-    # **核心修改 2: 移除 ZC 子文件**
-    # subfile_zc_final = f"ZC{f'ZCAC'}\x0d" 
-
-    # --- 4. 动态计算头部和偏移量 (关键修正) ---
+    # 清理空字段（如 NONE\x0a，包括 DAC）并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
+    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a").replace("NONE\x0a", "\x0a") + "\x0d"
     
-    # DL 文件的实际长度
+    # --- 4. 动态计算头部和 Control Field ---
+    
+    # 1. DL 文件的实际长度
     len_dl = len(subfile_dl_final.encode('latin-1'))
     
-    # Header Control Field (C03XXXXXX) 的固定长度
-    control_field_len = 9 
+    # 2. Control Field (C03) 长度 (固定 9 字节)
+    control_field_len = 9
     
-    # AAMVA Header (固定长度)
+    # 3. AAMVA Header 前缀 (固定 21 字节)
     aamva_header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_version}{jurisdiction_version}{num_entries}"
-    aamva_header_len = 21 
+    header_prefix_len = 21 
     
-    # **核心修改 3: Designator 长度改为 1 个 (10 字节)**
+    # 4. Designator 长度 (1个 Designator = 10 字节)
     designator_len = 1 * 10 
     
-    # Total File Length (C03XX)
-    # 总长度 = Header Prefix (21) + Control Field (9) + Designator (10) + DL Content 
-    total_data_len = aamva_header_len + control_field_len + designator_len + len_dl
-    
-    # Offset of DL file: DL 文件在 Designator 之后开始
-    offset_dl_val = aamva_header_len + control_field_len + designator_len 
-    
-    # --- 5. 构造最终 Designator 和 Header ---
-    
-    # 构造 Control Field (C03XXXXXX)
+    # 5. 计算总字节长度 (Total Data Length)
+    total_data_len = header_prefix_len + control_field_len + designator_len + len_dl
+
+    # 6. 构造 Control Field (C03XXXXXX)
     control_field = f"C03{total_data_len:05d}{int(num_entries):02d}" 
     
-    # 构造 Designator (类型 + 偏移量 + 长度)
-    des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
+    # 7. 计算 DL 文件的偏移量 (Designator 之后开始)
+    offset_dl_val = header_prefix_len + control_field_len + designator_len 
     
-    # 最终拼接: Header Prefix + Control Field + Designator (仅 DL) + Subfile (仅 DL)
-    return aamva_header_prefix + control_field + des_dl + subfile_dl_final
+    # 8. 构造 Designator
+    des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
+
+    # 9. 最终拼接: Header Prefix + Control Field + Designator + Subfile
+    full_data = aamva_header_prefix + control_field + des_dl + subfile_dl_final
+    
+    return full_data
 
 
-# ==================== 3. Streamlit 生成界面 UI (保持不变) ====================
+# ==================== 3. Streamlit 生成界面 UI ====================
 
 def pdf417_generator_ui():
-    st.title("💳 AAMVA PDF417 数据生成专家")
-    st.caption("基于 AAMVA D20-2020 标准，修正为**单子文件 DL (Num Entries = 01)** 模式。")
+    st.title("💳 AAMVA PDF417 50-州 生成专家")
+    st.caption("基于 AAMVA D20-2020 标准，**强制使用单文件 (Num Entries = 01)** 模式。")
 
     # --- 状态选择 ---
     jurisdictions = {v['name']: k for k, v in JURISDICTION_MAP.items()}
     sorted_names = sorted(jurisdictions.keys())
     
-    default_state_name = JURISDICTION_MAP["CO"]['name'] # 默认科罗拉多州
+    default_state_name = JURISDICTION_MAP["TX"]['name']
     selected_name = st.selectbox("选择目标州/管辖区 (Jurisdiction)", 
                                  options=sorted_names,
                                  index=sorted_names.index(default_state_name))
     jurisdiction_code = jurisdictions[selected_name]
     
-    st.info(f"选中的 IIN: **{JURISDICTION_MAP[jurisdiction_code]['iin']}** | 州代码: **{jurisdiction_code}** | 子文件数: **01**")
+    st.info(f"选中的 IIN: **{JURISDICTION_MAP[jurisdiction_code]['iin']}** | 州代码: **{jurisdiction_code}** | 子文件数: **01 (强制)**")
 
-    # --- 默认数据 (保持不变) ---
+    # --- 默认数据 (使用 TX 风格默认值) ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
         'address': '8444 KALAMATH ST', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
         'dob': '09/23/1990', 'exp_date': '09/23/2026', 'iss_date': '04/20/2021', 'rev_date': '10302015',
-        'dl_number': '171625540', 'class_code': 'R', 'rest_code': 'C', 'end_code': 'NONE',
+        'dl_number': '171625540', 'class_code': 'C', 'rest_code': 'NONE', 'end_code': 'NONE',
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
-        'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'CLW'
+        'sex': '2', 'height_input': '069', 'weight': '140', 'eyes': 'BLU', 'hair': 'BRO', 'race': 'W'
     }
     
     if JURISDICTION_MAP[jurisdiction_code].get('race'):
         default_data['race'] = JURISDICTION_MAP[jurisdiction_code]['race']
 
+    # ========================================================
+    # 新功能：隐藏参数的控制区
+    # ========================================================
+    
+    st.subheader("⚙️ 动态参数设置")
+    col_hide_1, col_hide_2 = st.columns(2)
+    
+    # 勾选框 1: 中间名 (DAC)
+    # 使用 key 绑定 Session State
+    col_hide_1.checkbox("隐藏中间名 (DAC)", key='hide_middle_name', value=False, help="勾选后，该字段将从 PDF417 数据流中完全移除。")
+    
+    # 勾选框 2: 地址信息 (DAG, DAI, DAJ, DAK)
+    col_hide_2.checkbox("隐藏完整地址信息 (DAG/DAI/DAK)", key='hide_address', value=False, help="勾选后，所有地址相关字段将从 PDF417 数据流中完全移除。")
+    
+    st.markdown("---")
+    
     # --- 1. 身份信息 ---
     st.subheader("👤 身份与姓名")
     col1, col2, col3 = st.columns(3)
     inputs = {}
     inputs['last_name'] = col1.text_input("姓氏 (DCS)", default_data['last_name'])
     inputs['first_name'] = col2.text_input("名 (DDEN)", default_data['first_name'])
-    inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'])
+    
+    # 中间名输入字段依赖于勾选框状态
+    if not st.session_state.get('hide_middle_name', False):
+        inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'])
+    else:
+        # 如果隐藏，仍然需要提供空值给 inputs 字典
+        inputs['middle_name'] = ""
+        col3.markdown("**中间名 (DAC)**: *字段已隐藏/移除*") 
     
     # --- 2. 证件信息 ---
     st.subheader("💳 证件信息")
@@ -304,7 +349,7 @@ def pdf417_generator_ui():
     inputs['dd_code'] = col3.text_input("鉴别码 (DCF)", default_data['dd_code'])
     
     inputs['audit_code'] = st.text_input("审计信息/机构代码 (DCJ)", default_data['audit_code'])
-    inputs['jurisdiction_code'] = jurisdiction_code 
+    inputs['jurisdiction_code'] = jurisdiction_code # 传递动态州码
 
     # --- 3. 日期信息 ---
     st.subheader("📅 日期 (MMDDYYYY)")
@@ -316,15 +361,25 @@ def pdf417_generator_ui():
     
     # --- 4. 地址信息 ---
     st.subheader("🏠 地址信息")
-    col1, col2 = st.columns([3, 1])
-    inputs['address'] = col1.text_input("街道地址 (DAG)", default_data['address'])
-    inputs['city'] = col2.text_input("城市 (DAI)", default_data['city'])
     
-    col1, col2, col3 = st.columns([1, 1, 2])
-    col1.text(f"州/省 (DAJ): {jurisdiction_code}") 
-    col2.text(f"国家 (DCG): USA") 
-    inputs['zip_input'] = col3.text_input("邮编 (DAK)", default_data['zip_input'], help="输入 5 位数字，将自动补全为 9 位。")
-    
+    if not st.session_state.get('hide_address', False):
+        # 如果不隐藏，正常显示所有地址输入字段
+        col1, col2 = st.columns([3, 1])
+        inputs['address'] = col1.text_input("街道地址 (DAG)", default_data['address'])
+        inputs['city'] = col2.text_input("城市 (DAI)", default_data['city'])
+        
+        col1, col2, col3 = st.columns([1, 1, 2])
+        col1.text(f"州/省 (DAJ): {jurisdiction_code}") 
+        col2.text(f"国家 (DCG): USA") 
+        inputs['zip_input'] = col3.text_input("邮编 (DAK)", default_data['zip_input'], help="输入 5 位数字，将自动补全为 9 位。")
+        
+    else:
+        # 如果隐藏，显示提示，并提供空值
+        st.warning("地址信息 (DAG/DAI/DAK) 已被勾选隐藏，数据流中将不包含这些字段。")
+        inputs['address'] = ""
+        inputs['city'] = ""
+        inputs['zip_input'] = ""
+        
     # --- 5. 物理特征 ---
     st.subheader("🏋️ 物理特征")
     col1, col2, col3, col4, col5 = st.columns(5)
@@ -345,19 +400,33 @@ def pdf417_generator_ui():
 
         with st.spinner("正在生成 AAMVA 数据并编码..."):
             try:
+                # 核心数据生成
                 aamva_data = generate_aamva_data_core(inputs)
                 
+                # 编码 PDF417 (使用 latin-1 编码)
                 aamva_bytes = aamva_data.encode('latin-1')
                 codes = encode(aamva_bytes, columns=13, security_level=5)
-                
+                # 渲染图片
                 image = render_image(codes, scale=4, ratio=3, padding=10) 
                 
+                # 将 PIL 图像转换为字节流
                 buf = io.BytesIO()
                 image.save(buf, format="PNG")
                 png_image_bytes = buf.getvalue()
                 
                 actual_len = len(aamva_bytes)
-                st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
+                
+                # 警告检查: 检查头部声明长度是否与实际长度匹配
+                header_claimed_len_str = aamva_data[29:34] # C03XXXXXX -> 5个X
+                try:
+                    header_claimed_len = int(header_claimed_len_str)
+                    if header_claimed_len != actual_len:
+                         st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。严格解析器会拒绝。")
+                    else:
+                         st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
+                except ValueError:
+                    st.error("⚠️ **结构错误:** 无法解析头部长度字段。")
+
 
                 # --- 结果展示 ---
                 col_img, col_download = st.columns([1, 1])
