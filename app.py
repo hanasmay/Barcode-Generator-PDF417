@@ -16,11 +16,16 @@ import subprocess
 
 # --- 引入外部库 ---
 try:
+    # 尝试导入 PDF417 库
     from pdf417 import encode, render_image
 except ImportError:
     st.warning("警告：PDF417 编码库 (pdf417) 未安装。请运行 `pip install pdf417`。")
+    # 提供兼容的占位函数，防止程序崩溃
     def encode(*args, **kwargs): return []
-    def render_image(*args, **kwargs): return Image.new('RGB', (400, 100), color='white')
+    def render_image(*args, **kwargs): 
+        # 创建一个带有错误提示的白色图像
+        img = Image.new('RGB', (600, 100), color='white')
+        return img
 
 
 # ==================== 0. 配置与 51 州 IIN 映射 ====================
@@ -187,10 +192,7 @@ def generate_aamva_data_core(inputs):
     if not st.session_state.get('hide_middle_name', False):
          middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
          middle_name_field = f"DAC{middle_name}\x0a"
-    else:
-         # 如果隐藏，需要确保在 inputs['middle_name'] 为空时 DAC 字段不出现在 DL content body 中
-         pass 
-
+    
     # 2. 地址信息 (DAG, DAI, DAJ, DAK) - 依赖 Session State
     address_fields = ""
     if not st.session_state.get('hide_address', False):
@@ -206,40 +208,42 @@ def generate_aamva_data_core(inputs):
             f"DAJ{jurisdiction_code}\x0a"              
             f"DAK{zip_code}\x0a"
         )
-    # 否则，address_fields 为空字符串 ""
     
     # 3. 构造 DL 子文件 (动态插入字段)
-    dl_content_body = (
-        f"DL"                                    
-        f"DAQ{dl_number}\x0a"                      
-        f"DCS{last_name}\x0a"                      
-        f"DDEN{first_name}\x0a"                    
-        middle_name_field +                         # 动态插入 DAC (中间名)
-        f"DDFN\x0a"                                
-        f"DAD\x0a"                                 
-        f"DDGN\x0a"                                
-        f"DCA{class_code}\x0a"                     
-        f"DCB{rest_code}\x0a"                      
-        f"DCD{end_code}\x0a"                       
-        f"DBD{iss_date}\x0a"                       
-        f"DBB{dob}\x0a"
-        f"DBA{exp_date}\x0a"
-        f"DBC{sex}\x0a"
-        f"DAU{height} IN\x0a"                      
-        f"DAY{eyes}\x0a"                           
-        address_fields +                            # 动态插入地址块
-        f"DCF{dd_code}\x0a"                         
-        f"DCGUSA\x0a"                              
-        f"DDA{dda_code}\x0a"
-        f"DDB{rev_date}\x0a"                       
-        f"DAZ{hair}\x0a"                           
-        f"DCJ{audit_code}\x0a"                     
-        f"DCL{race}\x0a"                           
-        f"DAW{weight}"                             
+    # 修复 SyntaxError: 使用元组拼接并用 "".join() 组合
+    dl_content_tuple = (
+        f"DL",
+        f"DAQ{dl_number}\x0a",
+        f"DCS{last_name}\x0a",
+        f"DDEN{first_name}\x0a",
+        middle_name_field,                          # 动态插入 DAC (中间名)
+        f"DDFN\x0a",
+        f"DAD\x0a",
+        f"DDGN\x0a",
+        f"DCA{class_code}\x0a",
+        f"DCB{rest_code}\x0a",
+        f"DCD{end_code}\x0a",
+        f"DBD{iss_date}\x0a",
+        f"DBB{dob}\x0a",
+        f"DBA{exp_date}\x0a",
+        f"DBC{sex}\x0a",
+        f"DAU{height} IN\x0a",
+        f"DAY{eyes}\x0a",
+        address_fields,                             # 动态插入地址块
+        f"DCF{dd_code}\x0a",
+        f"DCGUSA\x0a",
+        f"DDA{dda_code}\x0a",
+        f"DDB{rev_date}\x0a",
+        f"DAZ{hair}\x0a",
+        f"DCJ{audit_code}\x0a",
+        f"DCL{race}\x0a",
+        f"DAW{weight}"
     )
     
-    # 清理空字段（如 NONE\x0a，包括 DAC）并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
-    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a").replace("NONE\x0a", "\x0a") + "\x0d"
+    dl_content_body = "".join(dl_content_tuple)
+
+    # 清理空字段（如 NONE\x0a）并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
+    subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a").replace("  ", " ").replace("\x0a\x0a", "\x0a") + "\x0d"
     
     # --- 4. 动态计算头部和 Control Field ---
     
@@ -313,7 +317,6 @@ def pdf417_generator_ui():
     col_hide_1, col_hide_2 = st.columns(2)
     
     # 勾选框 1: 中间名 (DAC)
-    # 使用 key 绑定 Session State
     col_hide_1.checkbox("隐藏中间名 (DAC)", key='hide_middle_name', value=False, help="勾选后，该字段将从 PDF417 数据流中完全移除。")
     
     # 勾选框 2: 地址信息 (DAG, DAI, DAJ, DAK)
@@ -332,7 +335,7 @@ def pdf417_generator_ui():
     if not st.session_state.get('hide_middle_name', False):
         inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'])
     else:
-        # 如果隐藏，仍然需要提供空值给 inputs 字典
+        # 如果隐藏，仍然需要占位符以便代码能引用，但实际值不重要
         inputs['middle_name'] = ""
         col3.markdown("**中间名 (DAC)**: *字段已隐藏/移除*") 
     
