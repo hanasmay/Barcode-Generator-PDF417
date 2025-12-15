@@ -1,9 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION WITH EXTENDED HIDING)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：强制单 DL 子文件 (Num Entries = 01)，动态 IIN/JVersion，
-      精确头部计算，并支持动态隐藏中间名和地址信息。
+特点：支持动态隐藏中间名、完整地址块、身体特征和审计信息。
 """
 import streamlit as st
 from PIL import Image
@@ -16,21 +15,17 @@ import subprocess
 
 # --- 引入外部库 ---
 try:
-    # 尝试导入 PDF417 库
     from pdf417 import encode, render_image
 except ImportError:
     st.warning("警告：PDF417 编码库 (pdf417) 未安装。请运行 `pip install pdf417`。")
-    # 提供兼容的占位函数，防止程序崩溃
     def encode(*args, **kwargs): return []
     def render_image(*args, **kwargs): 
-        # 创建一个带有错误提示的白色图像
         img = Image.new('RGB', (600, 100), color='white')
         return img
 
 
 # ==================== 0. 配置与 51 州 IIN 映射 ====================
 
-# 州代码到 IIN 和版本信息的映射 (AAMVA V09/D20-2020 兼容)
 JURISDICTION_MAP = {
     "ME": {"name": "Maine - 缅因州", "iin": "636021", "jver": "01", "race": "W"},
     "VT": {"name": "Vermont - 佛蒙特州", "iin": "636044", "jver": "01", "race": "W"},
@@ -158,15 +153,12 @@ def generate_aamva_data_core(inputs):
     iin = config['iin']
     jurisdiction_version = config['jver']
     aamva_version = "09" # 通用版本
-    
-    # **核心结构：强制使用 01 个子文件**
-    num_entries = "01" 
+    num_entries = "01" # 强制单文件模式
     
     # 2. 清洗输入数据
     # 基础字段（不依赖隐藏状态）
     last_name = inputs['last_name'].strip().upper()
     first_name = inputs['first_name'].strip().upper()
-
     dob = clean_date_input(inputs['dob'])
     exp_date = clean_date_input(inputs['exp_date'])
     iss_date = clean_date_input(inputs['iss_date'])
@@ -176,14 +168,10 @@ def generate_aamva_data_core(inputs):
     rest_code = inputs['rest_code'].strip().upper() if inputs['rest_code'] else "NONE"
     end_code = inputs['end_code'].strip().upper() if inputs['end_code'] else "NONE"
     dd_code = inputs['dd_code'].strip().upper()
-    audit_code = inputs['audit_code'].strip().upper()
     dda_code = inputs['dda_code'].strip().upper()
     sex = inputs['sex'].strip()
-    height = convert_height_to_inches_ui(inputs['height_input'])
-    weight = inputs['weight'].strip().upper()
-    eyes = inputs['eyes'].strip().upper()
-    hair = inputs['hair'].strip().upper()
-    race = inputs['race'].strip().upper() if inputs['race'] else config['race']
+    
+    # 依赖隐藏状态的字段在构建 dl_content_tuple 时处理
     
     # --- 动态构建 DL 子文件内容 ---
     
@@ -193,10 +181,11 @@ def generate_aamva_data_core(inputs):
          middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'] else "NONE"
          middle_name_field = f"DAC{middle_name}\x0a"
     
-    # 2. 地址信息 (DAG, DAI, DAJ, DAK) - 依赖 Session State
+    # 2. 地址信息 (DAG, DAH, DAI, DAK) - 依赖 Session State
     address_fields = ""
-    if not st.session_state.get('hide_address', False):
+    if not st.session_state.get('hide_address_block', False):
         address = inputs['address'].strip().upper()
+        apartment_num = inputs['apartment_num'].strip().upper() if inputs['apartment_num'] else "NONE"
         city = inputs['city'].strip().upper()
         zip_input = inputs['zip_input'].replace("-", "").strip().upper()
         zip_code = zip_input
@@ -204,19 +193,44 @@ def generate_aamva_data_core(inputs):
 
         address_fields = (
             f"DAG{address}\x0a"                      
+            f"DAH{apartment_num}\x0a"                 # 包含 DAH (公寓号)
             f"DAI{city}\x0a"                           
             f"DAJ{jurisdiction_code}\x0a"              
             f"DAK{zip_code}\x0a"
         )
+
+    # 3. 审计信息 (DCJ) - 依赖 Session State
+    audit_field = ""
+    if not st.session_state.get('hide_audit_code', False):
+         audit_code = inputs['audit_code'].strip().upper()
+         audit_field = f"DCJ{audit_code}\x0a"
+
+    # 4. 身体特征 (DAU, DAY, DAZ, DAW, DCL) - 依赖 Session State
+    physical_fields = ""
+    if not st.session_state.get('hide_physical_block', False):
+        height = convert_height_to_inches_ui(inputs['height_input'])
+        eyes = inputs['eyes'].strip().upper()
+        hair = inputs['hair'].strip().upper()
+        race = inputs['race'].strip().upper() if inputs['race'] else config['race']
+        weight = inputs['weight'].strip().upper()
+        
+        # DAW 必须是最后一个字段 (或接近最后)
+        physical_fields = (
+            f"DAU{height} IN\x0a"
+            f"DAY{eyes}\x0a"
+            f"DAZ{hair}\x0a"
+            f"DCL{race}\x0a"                           
+            f"DAW{weight}"                           
+        )
+
     
-    # 3. 构造 DL 子文件 (动态插入字段)
-    # 修复 SyntaxError: 使用元组拼接并用 "".join() 组合
+    # 5. 构造 DL 子文件 (动态插入字段) - 使用元组拼接
     dl_content_tuple = (
         f"DL",
         f"DAQ{dl_number}\x0a",
         f"DCS{last_name}\x0a",
         f"DDEN{first_name}\x0a",
-        middle_name_field,                          # 动态插入 DAC (中间名)
+        middle_name_field,                          # 动态 DAC
         f"DDFN\x0a",
         f"DAD\x0a",
         f"DDGN\x0a",
@@ -227,19 +241,17 @@ def generate_aamva_data_core(inputs):
         f"DBB{dob}\x0a",
         f"DBA{exp_date}\x0a",
         f"DBC{sex}\x0a",
-        f"DAU{height} IN\x0a",
-        f"DAY{eyes}\x0a",
-        address_fields,                             # 动态插入地址块
+        physical_fields,                            # 动态插入 DAU, DAW, DCL, DAY, DAZ
+        address_fields,                             # 动态插入 DAG, DAH, DAI, DAJ, DAK
         f"DCF{dd_code}\x0a",
         f"DCGUSA\x0a",
         f"DDA{dda_code}\x0a",
         f"DDB{rev_date}\x0a",
-        f"DAZ{hair}\x0a",
-        f"DCJ{audit_code}\x0a",
-        f"DCL{race}\x0a",
-        f"DAW{weight}"
+        audit_field,                                # 动态插入 DCJ
+        f"DDL", # DDL / DDK 等如果需要，需要在这里以 "NONE\x0a" 或空字符串的方式处理
     )
     
+    # 使用 "".join() 拼接所有部分
     dl_content_body = "".join(dl_content_tuple)
 
     # 清理空字段（如 NONE\x0a）并最终拼接 DL 子文件。用 \x0d (CR) 结束 DL 文件
@@ -299,7 +311,7 @@ def pdf417_generator_ui():
     # --- 默认数据 (使用 TX 风格默认值) ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
-        'address': '8444 KALAMATH ST', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
+        'address': '8444 KALAMATH ST', 'apartment_num': 'APT B', 'city': 'FEDERAL HEIGHTS', 'zip_input': '80260',
         'dob': '09/23/1990', 'exp_date': '09/23/2026', 'iss_date': '04/20/2021', 'rev_date': '10302015',
         'dl_number': '171625540', 'class_code': 'C', 'rest_code': 'NONE', 'end_code': 'NONE',
         'dd_code': '6358522', 'audit_code': 'CDOR_DL_0_042121_06913', 'dda_code': 'F',
@@ -314,14 +326,20 @@ def pdf417_generator_ui():
     # ========================================================
     
     st.subheader("⚙️ 动态参数设置")
-    col_hide_1, col_hide_2 = st.columns(2)
+    col_hide_1, col_hide_2, col_hide_3 = st.columns(3)
     
     # 勾选框 1: 中间名 (DAC)
-    col_hide_1.checkbox("隐藏中间名 (DAC)", key='hide_middle_name', value=False, help="勾选后，该字段将从 PDF417 数据流中完全移除。")
+    col_hide_1.checkbox("隐藏中间名 (DAC)", key='hide_middle_name', value=False, help="移除 DAC 字段。")
     
-    # 勾选框 2: 地址信息 (DAG, DAI, DAJ, DAK)
-    col_hide_2.checkbox("隐藏完整地址信息 (DAG/DAI/DAK)", key='hide_address', value=False, help="勾选后，所有地址相关字段将从 PDF417 数据流中完全移除。")
+    # 勾选框 2: 地址块 (DAG/DAH/DAI/DAK/DAJ)
+    col_hide_2.checkbox("隐藏地址块 (含 DAH/邮编)", key='hide_address_block', value=False, help="移除所有地址相关字段。")
+
+    # 勾选框 3: 身体特征 (DAU/DAW/DAY/DAZ/DCL)
+    col_hide_3.checkbox("隐藏身体特征/分类 (DAU/DAW/DCL...)", key='hide_physical_block', value=False, help="移除身高、体重、眼睛、头发和民族等字段。")
     
+    # 勾选框 4: 审计码 (DCJ)
+    st.checkbox("隐藏审计信息/机构代码 (DCJ)", key='hide_audit_code', value=False, help="移除 DCJ 字段。", )
+
     st.markdown("---")
     
     # --- 1. 身份信息 ---
@@ -335,7 +353,6 @@ def pdf417_generator_ui():
     if not st.session_state.get('hide_middle_name', False):
         inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'])
     else:
-        # 如果隐藏，仍然需要占位符以便代码能引用，但实际值不重要
         inputs['middle_name'] = ""
         col3.markdown("**中间名 (DAC)**: *字段已隐藏/移除*") 
     
@@ -351,7 +368,14 @@ def pdf417_generator_ui():
     inputs['end_code'] = col2.text_input("背书 (DCD)", default_data['end_code'])
     inputs['dd_code'] = col3.text_input("鉴别码 (DCF)", default_data['dd_code'])
     
-    inputs['audit_code'] = st.text_input("审计信息/机构代码 (DCJ)", default_data['audit_code'])
+    # 审计码输入依赖于勾选框状态
+    if not st.session_state.get('hide_audit_code', False):
+        inputs['audit_code'] = st.text_input("审计信息/机构代码 (DCJ)", default_data['audit_code'])
+    else:
+        inputs['audit_code'] = ""
+        st.markdown("**审计信息/机构代码 (DCJ)**: *字段已隐藏/移除*")
+        
+
     inputs['jurisdiction_code'] = jurisdiction_code # 传递动态州码
 
     # --- 3. 日期信息 ---
@@ -365,12 +389,13 @@ def pdf417_generator_ui():
     # --- 4. 地址信息 ---
     st.subheader("🏠 地址信息")
     
-    if not st.session_state.get('hide_address', False):
+    if not st.session_state.get('hide_address_block', False):
         # 如果不隐藏，正常显示所有地址输入字段
-        col1, col2 = st.columns([3, 1])
+        col1, col2, col_apt = st.columns([3, 1, 1])
         inputs['address'] = col1.text_input("街道地址 (DAG)", default_data['address'])
         inputs['city'] = col2.text_input("城市 (DAI)", default_data['city'])
-        
+        inputs['apartment_num'] = col_apt.text_input("公寓号 (DAH)", default_data['apartment_num'], help="附加地址/公寓号")
+
         col1, col2, col3 = st.columns([1, 1, 2])
         col1.text(f"州/省 (DAJ): {jurisdiction_code}") 
         col2.text(f"国家 (DCG): USA") 
@@ -378,20 +403,33 @@ def pdf417_generator_ui():
         
     else:
         # 如果隐藏，显示提示，并提供空值
-        st.warning("地址信息 (DAG/DAI/DAK) 已被勾选隐藏，数据流中将不包含这些字段。")
+        st.warning("地址信息 (DAG/DAH/DAI/DAK) 已被勾选隐藏，数据流中将不包含这些字段。")
         inputs['address'] = ""
+        inputs['apartment_num'] = ""
         inputs['city'] = ""
         inputs['zip_input'] = ""
         
     # --- 5. 物理特征 ---
     st.subheader("🏋️ 物理特征")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    inputs['sex'] = col1.selectbox("性别 (DBC)", options=['1', '2', '9'], index=['1', '2', '9'].index(default_data['sex']))
-    inputs['height_input'] = col2.text_input("身高 (DAU)", default_data['height_input'], help="总英寸 (如 069) 或 feet/inches (如 509)。")
-    inputs['weight'] = col3.text_input("体重 (DAW)", default_data['weight'], help="磅 (LB)")
-    inputs['eyes'] = col4.text_input("眼睛颜色 (DAY)", default_data['eyes'])
-    inputs['hair'] = col5.text_input("头发颜色 (DAZ)", default_data['hair'])
-    inputs['race'] = st.text_input("民族/其他分类 (DCL)", default_data['race'], help=f"例如 {default_data['race']}")
+    
+    if not st.session_state.get('hide_physical_block', False):
+        col1, col2, col3, col4, col5 = st.columns(5)
+        inputs['sex'] = col1.selectbox("性别 (DBC)", options=['1', '2', '9'], index=['1', '2', '9'].index(default_data['sex']))
+        
+        # 身体特征输入字段
+        inputs['height_input'] = col2.text_input("身高 (DAU)", default_data['height_input'], help="总英寸 (如 069) 或 feet/inches (如 509)。")
+        inputs['weight'] = col3.text_input("体重 (DAW)", default_data['weight'], help="磅 (LB)")
+        inputs['eyes'] = col4.text_input("眼睛颜色 (DAY)", default_data['eyes'])
+        inputs['hair'] = col5.text_input("头发颜色 (DAZ)", default_data['hair'])
+        inputs['race'] = st.text_input("民族/其他分类 (DCL)", default_data['race'], help=f"例如 {default_data['race']}")
+    else:
+        st.warning("身体特征/分类 (DAU/DAW/DCL/DAY/DAZ) 已被勾选隐藏，数据流中将不包含这些字段。")
+        inputs['sex'] = default_data['sex'] # 保持性别可见，但相关身体特征隐藏
+        inputs['height_input'] = ""
+        inputs['weight'] = ""
+        inputs['eyes'] = ""
+        inputs['hair'] = ""
+        inputs['race'] = ""
 
     st.markdown("---")
     
