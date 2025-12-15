@@ -153,11 +153,14 @@ def generate_aamva_data_core(inputs):
     iin = config['iin']
     jurisdiction_version = config['jver']
     aamva_version = "09" # 通用版本
-    num_entries = "01" # 强制单文件模式
+    
+    # **核心结构：强制使用 01 个子文件**
+    num_entries = "01" 
     
     # 2. 清洗输入数据 - 基础字段
     last_name = inputs['last_name'].strip().upper()
     first_name = inputs['first_name'].strip().upper()
+
     dob = clean_date_input(inputs['dob'])
     exp_date = clean_date_input(inputs['exp_date'])
     iss_date = clean_date_input(inputs['iss_date'])
@@ -170,7 +173,7 @@ def generate_aamva_data_core(inputs):
     dda_code = inputs['dda_code'].strip().upper()
     sex = inputs['sex'].strip()
     
-    # 3. 清洗输入数据 - 动态隐藏字段 (若隐藏，则设为空字符串)
+    # --- 3. 清洗输入数据 - 动态隐藏字段 ---
     
     # 中间名 (DAC) - 始终可见，若为空则设为 NONE
     middle_name = inputs['middle_name'].strip().upper() if inputs['middle_name'].strip() else "NONE"
@@ -184,13 +187,21 @@ def generate_aamva_data_core(inputs):
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
+    dau_field = f"DAU{height} IN\x0a" if height else ""
     
     eyes = inputs['eyes'].strip().upper() if not st.session_state.get('hide_eyes', False) else ""
+    day_field = f"DAY{eyes}\x0a" if eyes else ""
+    
     hair = inputs['hair'].strip().upper() if not st.session_state.get('hide_hair', False) else ""
+    daz_field = f"DAZ{hair}\x0a" if hair else ""
+    
     race_default = inputs['race'].strip().upper() if inputs['race'].strip() else config['race']
     race = race_default if not st.session_state.get('hide_race', False) else ""
-    weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
+    dcl_field = f"DCL{race}\x0a" if race else ""
     
+    weight = inputs['weight'].strip().upper() if not st.session_state.get('hide_weight', False) else ""
+    daw_field = f"DAW{weight}\x0a" if weight else "" # 暂以 \x0a 结尾
+
     # 审计码 (DCJ) - 独立隐藏
     audit_code = inputs['audit_code'].strip().upper() if inputs['audit_code'].strip() else "NONE"
     dcj_field_with_sep = f"DCJ{audit_code}\x0a" if not st.session_state.get('hide_audit_code', False) else ""
@@ -201,15 +212,15 @@ def generate_aamva_data_core(inputs):
     zip_input = inputs['zip_input'].replace("-", "").strip().upper()
     zip_code = zip_input
     if len(zip_code) == 5: zip_code += "0000"
-
-    # 5. 构造 DL 子文件 (使用列表拼接，以确保最后的 \x0a 被正确移除)
     
-    all_fields_list = [
-        "DL",
+    # 5. 构造 DL 子文件 (使用元组拼接)
+    
+    dl_content_tuple = (
+        f"DL",
         f"DAQ{dl_number}\x0a",
         f"DCS{last_name}\x0a",
         f"DDEN{first_name}\x0a",
-        dac_field,
+        dac_field,                          
         f"DDFN\x0a",
         f"DAD\x0a",
         f"DDGN\x0a",
@@ -221,11 +232,11 @@ def generate_aamva_data_core(inputs):
         f"DBA{exp_date}\x0a",
         f"DBC{sex}\x0a",
         
-        # 身体特征 (DAU, DAY)
-        f"DAU{height} IN\x0a" if height else "",
-        f"DAY{eyes}\x0a" if eyes else "",
+        # 身体特征
+        dau_field,
+        day_field,
 
-        # 地址块 (DAG, DAH, DAI, DAJ, DAK)
+        # 地址块
         f"DAG{address}\x0a",
         dah_field, # 动态 DAH
         f"DAI{city}\x0a",
@@ -240,27 +251,24 @@ def generate_aamva_data_core(inputs):
         
         # 结尾可选字段 (DCJ, DAZ, DCL, DAW)
         dcj_field_with_sep,
-        f"DAZ{hair}\x0a" if hair else "",
-        f"DCL{race}\x0a" if race else "",
-        f"DAW{weight}\x0a" if weight else "", # 暂以 \x0a 结尾
-    ]
+        daz_field,
+        dcl_field,
+        daw_field,
+    )
     
-    # 6. 最终清理: 移除空字段，并确保最后一个字段没有 \x0a
+    all_fields_list = [f for f in dl_content_tuple if f]
     
-    # 移除列表中的空字符串 (即被隐藏的字段)
-    all_fields_list = [f for f in all_fields_list if f]
-    
-    # 确保最后一个字段不以 \x0a 结尾 (AAMVA 规范)
+    # 6. 最终清理: 确保最后一个字段不以 \x0a 结尾
     if all_fields_list and all_fields_list[-1].endswith('\x0a'):
         all_fields_list[-1] = all_fields_list[-1].rstrip('\x0a')
 
     dl_content_body = "".join(all_fields_list)
 
     # 7. 清理 NONE 字段并添加子文件结束符 \x0d
-    # 这一步将 NONE\x0a 替换为 \x0a，如果用户输入了 NONE (即空)，且该字段没有被隐藏。
+    # 这一步将所有 NONE\x0a 替换为 \x0a
     subfile_dl_final = dl_content_body.replace("NONE\x0a", "\x0a") + "\x0d"
     
-    # --- 8. 动态计算头部和 Designator ---
+    # --- 8. 动态计算头部和 Control Field ---
     
     len_dl = len(subfile_dl_final.encode('latin-1'))
     control_field_len = 9
@@ -415,90 +423,3 @@ def pdf417_generator_ui():
     if not st.session_state.get('hide_eyes', False):
         inputs['eyes'] = col_e.text_input("眼睛颜色 (DAY)", default_data['eyes'])
     else:
-        inputs['eyes'] = ""
-        col_e.markdown("**眼睛 (DAY)**: *已隐藏/移除*")
-
-    # DAZ (头发)
-    if not st.session_state.get('hide_hair', False):
-        inputs['hair'] = col_hair.text_input("头发颜色 (DAZ)", default_data['hair'])
-    else:
-        inputs['hair'] = ""
-        col_hair.markdown("**头发 (DAZ)**: *已隐藏/移除*")
-        
-    # DCL (民族/分类)
-    if not st.session_state.get('hide_race', False):
-        inputs['race'] = st.text_input("民族/其他分类 (DCL)", default_data['race'], help=f"例如 {default_data['race']}")
-    else:
-        inputs['race'] = ""
-        st.markdown("**民族/分类 (DCL)**: *已隐藏/移除*")
-
-    st.markdown("---")
-    
-    # --- 6. 生成按钮 ---
-    if st.button("🚀 生成 PDF417 条码", type="primary"):
-        if not all([inputs['dl_number'], inputs['last_name'], inputs['dob']]):
-            st.error("请输入驾照号码、姓氏和出生日期 (DOB)。")
-            return
-
-        with st.spinner("正在生成 AAMVA 数据并编码..."):
-            try:
-                # 核心数据生成
-                aamva_data = generate_aamva_data_core(inputs)
-                
-                # 编码 PDF417 (使用 latin-1 编码)
-                aamva_bytes = aamva_data.encode('latin-1')
-                codes = encode(aamva_bytes, columns=13, security_level=5)
-                # 渲染图片
-                image = render_image(codes, scale=4, ratio=3, padding=10) 
-                
-                # 将 PIL 图像转换为字节流
-                buf = io.BytesIO()
-                image.save(buf, format="PNG")
-                png_image_bytes = buf.getvalue()
-                
-                actual_len = len(aamva_bytes)
-                
-                # 警告检查: 检查头部声明长度是否与实际长度匹配
-                header_claimed_len_str = aamva_data[29:34] # C03XXXXXX -> 5个X
-                try:
-                    header_claimed_len = int(header_claimed_len_str)
-                    if header_claimed_len != actual_len:
-                         st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。")
-                    else:
-                         st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
-                except ValueError:
-                    st.error("⚠️ **结构错误:** 无法解析头部长度字段。")
-
-
-                # --- 结果展示 ---
-                col_img, col_download = st.columns([1, 1])
-
-                with col_img:
-                    st.image(png_image_bytes, caption="PDF417 条码图像", use_column_width=True)
-                
-                with col_download:
-                    st.download_button(
-                        label="💾 下载原始 AAMVA 数据 (.txt)",
-                        data=aamva_bytes,
-                        file_name=f"{jurisdiction_code}_DL_RAW.txt",
-                        mime="text/plain"
-                    )
-                    st.download_button(
-                        label="🖼️ 下载条码图片 (.png)",
-                        data=png_image_bytes, 
-                        file_name=f"{jurisdiction_code}_PDF417.png",
-                        mime="image/png"
-                    )
-
-                st.markdown("---")
-                st.subheader("底层 AAMVA 数据流 (HEX/ASCII)")
-                st.code(get_hex_dump_str(aamva_bytes), language='text')
-
-            except Exception as e:
-                st.error(f"生成失败：请检查输入格式是否正确。错误详情：{e}")
-
-
-# ==================== 4. 网页主程序区 ====================
-
-if __name__ == "__main__":
-    pdf417_generator_ui()
