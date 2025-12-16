@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION - IIN ACCURACY AND COLUMN CONTROL)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - IIN ACCURACY FIX)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：使用用户确认的 IIN 映射，允许用户选择列数，修正了所有结构和长度问题。
+特点：使用经过验证的美国 50 州 IIN 映射，修正了所有结构和长度问题。
 """
 import streamlit as st
 from PIL import Image
@@ -107,7 +107,7 @@ st.markdown("""
 def get_hex_dump_str(raw_bytes):
     """生成易读的 HEX 数据视图"""
     output = []
-    output.append(f"📦 数据长度: {len(raw_bytes)} 字节")
+    output.append(f"?? 数据长度: {len(raw_bytes)} 字节")
     output.append("-" * 50)
     
     if isinstance(raw_bytes, str):
@@ -316,7 +316,7 @@ def generate_aamva_data_core(inputs):
 # ==================== 3. Streamlit 生成界面 UI ====================
 
 def pdf417_generator_ui():
-    st.title("💳 AAMVA PDF417 50-州 生成专家")
+    st.title("?? AAMVA PDF417 50-州 生成专家")
     st.caption("基于 AAMVA D20-2020 标准，使用**经过验证的美国 IIN 映射表**和**单文件 (Num Entries = 01)** 模式。")
 
     # --- 状态选择 ---
@@ -340,20 +340,6 @@ def pdf417_generator_ui():
     
     st.info(f"选中的 IIN: **{current_config['iin']}** | 州代码: **{jurisdiction_code}** | 文件数: **01 (强制)**")
 
-    # --- PDF417 列数控制 ---
-    st.markdown("---")
-    # 
-    selected_columns = st.slider(
-        "选择 PDF417 条码列数 (Columns)",
-        min_value=6,  # 最小列数
-        max_value=30, # 最大列数
-        value=15,     # 默认值
-        step=1,
-        help="列数决定了条码的宽度和数据密度。AAMVA 通常使用 13-18 列。"
-    )
-    st.markdown("---")
-
-
     # --- 默认数据 ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
@@ -370,7 +356,7 @@ def pdf417_generator_ui():
     # 动态参数控制区 (新功能)
     # ========================================================
     
-    st.subheader("⚙️ 动态参数设置")
+    st.subheader("?? 动态参数设置")
     
     # DAH 和 DCJ 默认隐藏
     col_hide_1, col_hide_2 = st.columns(2)
@@ -379,7 +365,7 @@ def pdf417_generator_ui():
     
     # 身体特征独立控制 (DCL 默认隐藏)
     st.markdown("---")
-    st.subheader("🏋️ 身体特征动态隐藏")
+    st.subheader("??? 身体特征动态隐藏")
     col_phy_1, col_phy_2, col_phy_3, col_phy_4, col_phy_5 = st.columns(5)
     col_phy_1.checkbox("隐藏身高 (DAU)", key='hide_height', value=False)
     col_phy_2.checkbox("隐藏体重 (DAW)", key='hide_weight', value=False)
@@ -390,7 +376,7 @@ def pdf417_generator_ui():
     
     
     # --- 1. 身份信息 ---
-    st.subheader("👤 身份与姓名")
+    st.subheader("?? 身份与姓名")
     col1, col2, col3 = st.columns(3)
     inputs = {}
     inputs['last_name'] = col1.text_input("姓氏 (DCS)", default_data['last_name'])
@@ -399,7 +385,7 @@ def pdf417_generator_ui():
     inputs['middle_name'] = col3.text_input("中间名 (DAC)", default_data['middle_name'], help="此字段始终包含。如留空，数据中将使用 'NONE'。")
     
     # --- 2. 证件信息 ---
-    st.subheader("💳 证件信息")
+    st.subheader("?? 证件信息")
     col1, col2, col3 = st.columns(3)
     inputs['dl_number'] = col1.text_input("驾照号码 (DAQ)", default_data['dl_number'])
     inputs['class_code'] = col2.text_input("类型 (DCA)", default_data['class_code'])
@@ -421,7 +407,7 @@ def pdf417_generator_ui():
     inputs['jurisdiction_code'] = jurisdiction_code # 传递动态州码
 
     # --- 3. 日期信息 ---
-    st.subheader("📅 日期 (MMDDYYYY)")
+    st.subheader("?? 日期 (MMDDYYYY)")
     col1, col2, col3, col4 = st.columns(4)
     inputs['dob'] = col1.text_input("出生日期 (DBB)", default_data['dob'], help="MMDDYYYY 格式")
     inputs['iss_date'] = col2.text_input("签发日期 (DBD)", default_data['iss_date'])
@@ -429,7 +415,7 @@ def pdf417_generator_ui():
     inputs['rev_date'] = col4.text_input("版面发行日期 (DDB)", default_data['rev_date'])
     
     # --- 4. 地址信息 ---
-    st.subheader("🏠 地址信息")
+    st.subheader("?? 地址信息")
     
     # 街道、城市固定可见
     col1, col2, col_apt = st.columns([3, 1, 1])
@@ -450,7 +436,7 @@ def pdf417_generator_ui():
     inputs['zip_input'] = col3.text_input("邮编 (DAK)", default_data['zip_input'], help="输入 5 位数字，将自动补全为 9 位。")
         
     # --- 5. 物理特征 ---
-    st.subheader("🏋️ 物理特征")
+    st.subheader("??? 物理特征")
     
     col_sex, col_h, col_w, col_e, col_hair = st.columns(5)
     inputs['sex'] = col_sex.selectbox("性别 (DBC)", options=['1', '2', '9'], index=['1', '2', '9'].index(default_data['sex']))
@@ -493,7 +479,7 @@ def pdf417_generator_ui():
     st.markdown("---")
     
     # --- 6. 生成按钮 ---
-    if st.button("🚀 生成 PDF417 条码", type="primary"):
+    if st.button("?? 生成 PDF417 条码", type="primary"):
         if not all([inputs['dl_number'], inputs['last_name'], inputs['dob']]):
             st.error("请输入驾照号码、姓氏和出生日期 (DOB)。")
             return
@@ -503,9 +489,9 @@ def pdf417_generator_ui():
                 # 核心数据生成
                 aamva_data = generate_aamva_data_core(inputs)
                 
-                # 编码 PDF417 (使用用户选择的列数)
+                # 编码 PDF417 (使用 latin-1 编码)
                 aamva_bytes = aamva_data.encode('latin-1')
-                codes = encode(aamva_bytes, columns=selected_columns, security_level=5)
+                codes = encode(aamva_bytes, columns=13, security_level=5)
                 # 渲染图片
                 image = render_image(codes, scale=4, ratio=3, padding=10) 
                 
@@ -517,40 +503,40 @@ def pdf417_generator_ui():
                 actual_len = len(aamva_bytes)
                 
                 # 警告检查: 检查头部声明长度是否与实际长度匹配
-                c03_start_index = aamva_data.find("C03")
+                c03_start_index = aamva_data.find("DL03")
                 
-                if c03_start_index != -1:
-                    header_claimed_len_str = aamva_data[c03_start_index + 3 : c03_start_index + 8] 
+                if dl03_start_index != -1:
+                    header_claimed_len_str = aamva_data[dl03_start_index + 3 : dl03_start_index + 8] 
                     
                     try:
                         header_claimed_len = int(header_claimed_len_str)
                         if header_claimed_len != actual_len:
-                            st.error(f"⚠️ **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。")
+                            st.error(f"?? **结构警告:** 头部声明长度 ({header_claimed_len} bytes) 与实际长度 ({actual_len} bytes) 不匹配。")
                         else:
-                            st.success(f"✅ 条码数据生成成功！总字节长度：{actual_len} bytes")
+                            st.success(f"? 条码数据生成成功！总字节长度：{actual_len} bytes")
                             
                     except ValueError:
-                        st.error(f"⚠️ **结构错误:** 无法解析 Control Field 的长度部分 ('{header_claimed_len_str}')。")
+                        st.error(f"?? **结构错误:** 无法解析 Control Field 的长度部分 ('{header_claimed_len_str}')。")
                         
                 else:
-                    st.error("⚠️ **结构错误:** 未能在数据流中找到 Control Field (C03) 标识符。")
+                    st.error("?? **结构错误:** 未能在数据流中找到 Control Field (C03) 标识符。")
 
 
                 # --- 结果展示 ---
                 col_img, col_download = st.columns([1, 1])
 
                 with col_img:
-                    st.image(png_image_bytes, caption=f"PDF417 条码图像 (列数: {selected_columns})", use_column_width=True)
+                    st.image(png_image_bytes, caption="PDF417 条码图像", use_column_width=True)
                 
                 with col_download:
                     st.download_button(
-                        label="💾 下载原始 AAMVA 数据 (.txt)",
+                        label="?? 下载原始 AAMVA 数据 (.txt)",
                         data=aamva_bytes,
                         file_name=f"{jurisdiction_code}_DL_RAW.txt",
                         mime="text/plain"
                     )
                     st.download_button(
-                        label="🖼️ 下载条码图片 (.png)",
+                        label="??? 下载条码图片 (.png)",
                         data=png_image_bytes, 
                         file_name=f"{jurisdiction_code}_PDF417.png",
                         mime="image/png"
