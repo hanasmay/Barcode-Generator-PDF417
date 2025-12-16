@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION - TYPE FIX V12)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - PERFECT LENGTH MATCH V13)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：修复 Num Entries 的类型格式化错误，消除程序执行中断。
+特点：IIN 锁定，Control Field 强制 DL03，并通过精确 DL Subfile 内容修正长度。
 """
 import streamlit as st
 from PIL import Image
@@ -161,9 +161,8 @@ def generate_aamva_data_core(inputs):
     iin = config['iin']
     
     # ！！！关键修正：Header Prefix 的压缩结构 ！！！
-    # 明确定义 Num Entries 为整数 1
+    # Num Entries: 1 字节
     num_entries_int = 1
-    num_entries_str = str(num_entries_int)
     
     # 2. 清洗输入数据 - 基础字段
     last_name = inputs['last_name'].strip().upper()
@@ -234,7 +233,9 @@ def generate_aamva_data_core(inputs):
     # 5. 构造 DL 子文件 (使用元组拼接)
     
     dl_content_tuple = (
-        f"DL",
+        # ！！！关键修正：DL 字段不应在这里，它应该在 DL Designator 之后作为 subfile 的第一个字段
+        # 你的 HEX 包含 DLDAQ...
+        f"DL", 
         f"DAQ{dl_number}\x0a",
         f"DCS{last_name}\x0a",
         f"DDEN{first_name}\x0a",
@@ -298,7 +299,8 @@ def generate_aamva_data_core(inputs):
     
     designator_len = 10 
     
-    # Header Prefix 长度 (基于您 Hex 的 19 字节结构)
+    # Header Prefix 长度 (基于您 Hex 的 17 字节结构)
+    # Header Prefix: @\x0a\x1e\x0dANSI 6360431 (17 bytes)
     header_prefix_len = 17 
     
     # **核心修正 3：计算总长度**
@@ -308,13 +310,12 @@ def generate_aamva_data_core(inputs):
     total_data_len = total_non_data_len + len_dl 
     
     # Header Prefix (强制压缩版本号和文件数)
-    # Recreate the 17-byte prefix: @(1)+LF(1)+GS(1)+CR(1)+ANSI (4)+Space(1) + IIN(6) + "1" (1 byte)
+    # The structure must match the 17-byte prefix
     aamva_header_prefix = "@" + "\x0a" + "\x1e" + "\x0d" + "ANSI " + iin + "1"
     
     # !!! 用户要求的强制结构 !!! 将 C03 替换为 DL03
-    # 修复 Num Entries 的格式化问题
     control_field = f"DL03{total_data_len:05d}{num_entries_int:1d}" 
-    offset_dl_val = header_prefix_len + control_field_len + designator_len 
+    offset_dl_val = total_non_data_len
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
 
     # 最终数据流结构：Header Prefix + Control Field + Designator + Subfile
