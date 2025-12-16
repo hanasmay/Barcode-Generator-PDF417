@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION - TYPE FIX V12)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - STRUCTURE LOCKED V11)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：修复 Num Entries 的类型格式化错误，消除程序执行中断。
+特点：IIN 锁定，Control Field 强制 DL03，并修正所有头部长度以实现完美长度匹配。
 """
 import streamlit as st
 from PIL import Image
@@ -36,8 +36,8 @@ JURISDICTION_MAP = {
     "CO": {"name": "Colorado - 科罗拉多州", "iin": "636020", "jver": "01", "race": "CLW", "country": "USA", "abbr": "CO"}, 
     "CT": {"name": "Connecticut - 康涅狄格州", "iin": "636006", "jver": "01", "race": "W", "country": "USA", "abbr": "CT"},
     "DE": {"name": "Delaware - 特拉华州", "iin": "636011", "jver": "01", "race": "W", "country": "USA", "abbr": "DE"},
-    "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636007", "jver": "01", "race": "W", "country": "USA", "abbr": "DC"},
-    "FL": {"name": "Florida - 佛罗里达州", "iin": "636005", "jver": "01", "race": "W", "country": "USA", "abbr": "FL"},
+    "DC": {"name": "District of Columbia - 华盛顿特区", "iin": "636043", "jver": "01", "race": "W", "country": "USA", "abbr": "DC"},
+    "FL": {"name": "Florida - 佛罗里达州", "iin": "636010", "jver": "01", "race": "W", "country": "USA", "abbr": "FL"},
     "GA": {"name": "Georgia - 佐治亚州", "iin": "636008", "jver": "01", "race": "W", "country": "USA", "abbr": "GA"},
     "HI": {"name": "Hawaii - 夏威夷州", "iin": "636009", "jver": "01", "race": "W", "country": "USA", "abbr": "HI"},
     "ID": {"name": "Idaho - 爱达荷州", "iin": "636012", "jver": "01", "race": "W", "country": "USA", "abbr": "ID"},
@@ -161,9 +161,14 @@ def generate_aamva_data_core(inputs):
     iin = config['iin']
     
     # ！！！关键修正：Header Prefix 的压缩结构 ！！！
-    # 明确定义 Num Entries 为整数 1
-    num_entries_int = 1
-    num_entries_str = str(num_entries_int)
+    # Hex: 636043 1 9011 (IIN 6 bytes, 1 byte, 9011)
+    # The versioning seems compressed into one byte '1', and the subsequent Control Field is immediately after.
+    
+    # We reconstruct the Header Prefix to match the reported 17-byte length
+    # Hex: 400A1E0D414E534920 + 363336303433 + 31
+    
+    aamva_header_prefix = "@" + "\x0a" + "\x1e" + "\x0d" + "ANSI " + iin + "1"
+    header_prefix_len = 17 # Must be 17 bytes to match your Hex offset (263 total bytes)
     
     # 2. 清洗输入数据 - 基础字段
     last_name = inputs['last_name'].strip().upper()
@@ -291,30 +296,31 @@ def generate_aamva_data_core(inputs):
     # --- 8. 动态计算头部和 Control Field ---
     
     # **核心修正 1：精确计算 Control Field 中的 len_dl**
-    len_dl = len(subfile_dl_final.encode('latin-1'))
+    len_dl = len(subfile_dl_final.encode('latin-1')) # 必须等于 226 bytes
     
-    # **修正 1：Control Field 长度必须为 10** (DL03 + 5长度 + 1文件数)
-    control_field_len = 10 
+    # **修正 1：Control Field 长度必须为 10** control_field_len = 10 
     
     designator_len = 10 
     
-    # Header Prefix 长度 (基于您 Hex 的 19 字节结构)
+    # Header Prefix 必须是 17 字节，以匹配 263 总长
     header_prefix_len = 17 
     
-    # **核心修正 3：计算总长度**
+    # **核心修正 3：确保总长度与 len_dl 相加**
     total_non_data_len = header_prefix_len + control_field_len + designator_len # 17 + 10 + 10 = 37 bytes
     
     # 最终期望的总长度：263
     total_data_len = total_non_data_len + len_dl 
     
+    # Control Field Num Entries: 1 字节
+    num_entries = "1"
+    
     # Header Prefix (强制压缩版本号和文件数)
-    # Recreate the 17-byte prefix: @(1)+LF(1)+GS(1)+CR(1)+ANSI (4)+Space(1) + IIN(6) + "1" (1 byte)
+    # This structure is necessary to get the 17 bytes before DL03, as seen in your Hex.
     aamva_header_prefix = "@" + "\x0a" + "\x1e" + "\x0d" + "ANSI " + iin + "1"
     
     # !!! 用户要求的强制结构 !!! 将 C03 替换为 DL03
-    # 修复 Num Entries 的格式化问题
-    control_field = f"DL03{total_data_len:05d}{num_entries_int:1d}" 
-    offset_dl_val = header_prefix_len + control_field_len + designator_len 
+    control_field = f"DL03{total_data_len:05d}{int(num_entries):1d}" 
+    offset_dl_val = total_non_data_len
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
 
     # 最终数据流结构：Header Prefix + Control Field + Designator + Subfile
