@@ -503,7 +503,7 @@ def pdf417_generator_ui():
                 actual_len = len(aamva_bytes)
                 
                 # 警告检查: 检查头部声明长度是否与实际长度匹配
-                c03_start_index = aamva_data.find("DL03")
+                dl03_start_index = aamva_data.find("DL03")
                 
                 if dl03_start_index != -1:
                     header_claimed_len_str = aamva_data[dl03_start_index + 3 : dl03_start_index + 8] 
