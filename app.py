@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERIFIED VERSION - DL03 STRUCTURE)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - IIN LOCK AND LENGTH FIX)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：使用用户确认的 DL03 Control Field 结构，IIN 准确，UI 功能完善。
+特点：使用用户指定的 IIN 映射，Control Field 强制 DL03，并修复了 DL Subfile 内部的 1 字节长度偏差。
 """
 import streamlit as st
 from PIL import Image
@@ -24,12 +24,12 @@ except ImportError:
         return img
 
 
-# ==================== 0. 配置与 51 州 IIN 映射 (经过验证的美国 IIN 码) ====================
+# ==================== 0. 配置与 51 州 IIN 映射 (使用用户提供的 IIN 码) ====================
 
-# 使用标准的美国州缩写作为键，确保结构一致性
+# 警告：此映射表内容是根据用户最新输入进行粘贴，不保证其符合 AAMVA 官方最新规范。
 JURISDICTION_MAP = {
-    # 经过用户验证和确认的 IIN 映射
-     "AL": {"name": "Alabama - 阿拉巴马州", "iin": "636033", "jver": "01", "race": "W", "country": "USA", "abbr": "AL"},
+    # 保持用户提供的 IIN 映射
+    "AL": {"name": "Alabama - 阿拉巴马州", "iin": "636033", "jver": "01", "race": "W", "country": "USA", "abbr": "AL"},
     "AK": {"name": "Alaska - 阿拉斯加州", "iin": "636059", "jver": "00", "race": "W", "country": "USA", "abbr": "AK"},
     "AZ": {"name": "Arizona - 亚利桑那州", "iin": "636026", "jver": "01", "race": "W", "country": "USA", "abbr": "AZ"},
     "AR": {"name": "Arkansas - 阿肯色州", "iin": "636021", "jver": "01", "race": "W", "country": "USA", "abbr": "AR"},
@@ -81,7 +81,7 @@ JURISDICTION_MAP = {
     "WI": {"name": "Wisconsin - 威斯康星州", "iin": "636031", "jver": "01", "race": "W", "country": "USA", "abbr": "WI"},
     "WY": {"name": "Wyoming - 怀俄明州", "iin": "636060", "jver": "01", "race": "W", "country": "USA", "abbr": "WY"},
     # 地区
-     "GU": {"name": "Guam - 关岛", "iin": "636019", "jver": "01", "race": "W", "country": "USA", "abbr": "GU"},
+    "GU": {"name": "Guam - 关岛", "iin": "636019", "jver": "01", "race": "W", "country": "USA", "abbr": "GU"},
     "PR": {"name": "Puerto Rico - 波多黎各", "iin": "604431", "jver": "01", "race": "W", "country": "USA", "abbr": "PR"},
     "VI": {"name": "Virgin Islands - 维尔京群岛", "iin": "636062", "jver": "01", "race": "W", "country": "USA", "abbr": "VI"},
     "AS": {"name": "American Samoa - 美属萨摩亚", "iin": "604427", "jver": "01", "race": "W", "country": "USA", "abbr": "AS"},
@@ -194,12 +194,12 @@ def generate_aamva_data_core(inputs):
     
     # 身体特征 (DAU, DAY, DAZ, DCL, DAW) - 各自独立隐藏
     
-    # DAU (身高): 修正：将 DAU 字段值格式化为 '069 IN' (包含空格 ' ')
+    # DAU (身高): 修正：移除空格，以修复 1 字节长度偏差
     height_input = inputs['height_input']
     height = convert_height_to_inches_ui(height_input)
     height = height if not st.session_state.get('hide_height', False) else ""
-    # 最终修正 DAU 格式，添加空格 ' '。
-    dau_field = f"DAU{height} IN\x0a" if height else "" 
+    # 最终修正 DAU 格式，移除空格 ' '。
+    dau_field = f"DAU{height}IN\x0a" if height else "" 
     
     # DAY (眼睛)
     eyes = inputs['eyes'].strip().upper() if inputs['eyes'].strip() else "NONE"
@@ -254,7 +254,7 @@ def generate_aamva_data_core(inputs):
         f"DBA{exp_date}\x0a",
         f"DBC{sex}\x0a",
         
-        # 身体特征
+        # 身体特征 (DAU 已经修正为无空格)
         dau_field,
         day_field,
 
@@ -307,7 +307,7 @@ def generate_aamva_data_core(inputs):
     # **核心修正 3：确保总长度与 len_dl 相加**
     total_data_len = header_prefix_len + control_field_len + designator_len + len_dl
     
-    # !!! 用户要求的强制错误 !!! 将 C03 替换为 DL03
+    # !!! 用户要求的强制结构 !!! 将 C03 替换为 DL03
     control_field = f"DL03{total_data_len:05d}{int(num_entries):02d}" 
     offset_dl_val = header_prefix_len + control_field_len + designator_len 
     des_dl = f"DL{offset_dl_val:04d}{len_dl:04d}"
@@ -330,17 +330,17 @@ def pdf417_generator_ui():
     jurisdictions = {v['name'] + f" ({k})" : k for k, v in JURISDICTION_MAP.items()}
     sorted_names = sorted(jurisdictions.keys())
     
-    # 默认选择 FL
+    # 默认选择 TX
     try:
-        # 使用 FL 的缩写进行查找，确保无论名称如何变化，都能找到正确的键
-        default_state_name = [name for name, abbr in jurisdictions.items() if abbr == "FL"][0]
+        # 使用 TX 的缩写进行查找，确保无论名称如何变化，都能找到正确的键
+        default_state_name = [name for name, abbr in jurisdictions.items() if abbr == "TX"][0]
     except IndexError:
         default_state_name = sorted_names[0]
 
     selected_name = st.selectbox("选择目标州/管辖区 (Jurisdiction)", 
                                  options=sorted_names,
                                  index=sorted_names.index(default_state_name))
-    jurisdiction_code = jurisdictions[selected_name] # 这里的 jurisdiction_code 是州缩写 (e.g., "FL")
+    jurisdiction_code = jurisdictions[selected_name] # 这里的 jurisdiction_code 是州缩写 (e.g., "TX")
     
     current_config = JURISDICTION_MAP[jurisdiction_code]
     
