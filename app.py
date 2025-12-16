@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """
-AAMVA PDF417 50-State DL Generator (FINAL VERSION - ROBUST LENGTH & CONTENT FIX)
+AAMVA PDF417 50-State DL Generator (FINAL VERSION - IIN ACCURACY AND COLUMN CONTROL)
 功能：生成符合 AAMVA D20-2020 标准的美国 50 州驾照 PDF417 条码。
-特点：IIN 准确，修正了 DAU 格式和 Control Field 长度，以实现结构完美匹配。
+特点：使用用户确认的 IIN 映射，允许用户选择列数，修正了所有结构和长度问题。
 """
 import streamlit as st
 from PIL import Image
@@ -24,11 +24,11 @@ except ImportError:
         return img
 
 
-# ==================== 0. 配置与 51 州 IIN 映射 (经过验证的美国 IIN 码) ====================
+# ==================== 0. 配置与 51 州 IIN 映射 (经过用户验证的美国 IIN 码) ====================
 
 # 使用标准的美国州缩写作为键，确保结构一致性
 JURISDICTION_MAP = {
-    # 经过验证的美国 IIN 映射
+    # 经过用户验证和确认的 IIN 映射
     "AL": {"name": "Alabama - 阿拉巴马州", "iin": "636001", "jver": "01", "race": "W", "country": "USA", "abbr": "AL"},
     "AK": {"name": "Alaska - 阿拉斯加州", "iin": "636059", "jver": "00", "race": "W", "country": "USA", "abbr": "AK"},
     "AZ": {"name": "Arizona - 亚利桑那州", "iin": "636006", "jver": "01", "race": "W", "country": "USA", "abbr": "AZ"},
@@ -76,7 +76,7 @@ JURISDICTION_MAP = {
     "UT": {"name": "Utah - 犹他州", "iin": "636045", "jver": "01", "race": "W", "country": "USA", "abbr": "UT"},
     "VT": {"name": "Vermont - 佛蒙特州", "iin": "636044", "jver": "01", "race": "W", "country": "USA", "abbr": "VT"},
     "VA": {"name": "Virginia - 弗吉尼亚州", "iin": "636046", "jver": "01", "race": "W", "country": "USA", "abbr": "VA"},
-    "WA": {"name": "Washington - 636045", "jver": "00", "race": "W", "country": "USA", "abbr": "WA"}, 
+    "WA": {"name": "Washington - 华盛顿州", "iin": "636045", "jver": "00", "race": "W", "country": "USA", "abbr": "WA"}, 
     "WV": {"name": "West Virginia - 西弗吉尼亚州", "iin": "636048", "jver": "01", "race": "W", "country": "USA", "abbr": "WV"},
     "WI": {"name": "Wisconsin - 威斯康星州", "iin": "636047", "jver": "01", "race": "W", "country": "USA", "abbr": "WI"},
     "WY": {"name": "Wyoming - 怀俄明州", "iin": "636049", "jver": "01", "race": "W", "country": "USA", "abbr": "WY"},
@@ -340,6 +340,20 @@ def pdf417_generator_ui():
     
     st.info(f"选中的 IIN: **{current_config['iin']}** | 州代码: **{jurisdiction_code}** | 文件数: **01 (强制)**")
 
+    # --- PDF417 列数控制 ---
+    st.markdown("---")
+    # 
+    selected_columns = st.slider(
+        "选择 PDF417 条码列数 (Columns)",
+        min_value=6,  # 最小列数
+        max_value=30, # 最大列数
+        value=15,     # 默认值
+        step=1,
+        help="列数决定了条码的宽度和数据密度。AAMVA 通常使用 13-18 列。"
+    )
+    st.markdown("---")
+
+
     # --- 默认数据 ---
     default_data = {
         'first_name': 'LACEY', 'middle_name': 'LYNN', 'last_name': 'GOODING',
@@ -489,9 +503,9 @@ def pdf417_generator_ui():
                 # 核心数据生成
                 aamva_data = generate_aamva_data_core(inputs)
                 
-                # 编码 PDF417 (使用 latin-1 编码)
+                # 编码 PDF417 (使用用户选择的列数)
                 aamva_bytes = aamva_data.encode('latin-1')
-                codes = encode(aamva_bytes, columns=13, security_level=5)
+                codes = encode(aamva_bytes, columns=selected_columns, security_level=5)
                 # 渲染图片
                 image = render_image(codes, scale=4, ratio=3, padding=10) 
                 
@@ -526,7 +540,7 @@ def pdf417_generator_ui():
                 col_img, col_download = st.columns([1, 1])
 
                 with col_img:
-                    st.image(png_image_bytes, caption="PDF417 条码图像", use_column_width=True)
+                    st.image(png_image_bytes, caption=f"PDF417 条码图像 (列数: {selected_columns})", use_column_width=True)
                 
                 with col_download:
                     st.download_button(
