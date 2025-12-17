@@ -26,6 +26,16 @@ JURISDICTION_MAP = {
     "VT": "636024", "VA": "636000", "WA": "636045", "WV": "636061", "WI": "636031", "WY": "636060"
 }
 
+RACE_OPTIONS = {
+    "AI": "AI = Alaskan or American Indian",
+    "AP": "AP = Asian or Pacific Islander",
+    "BK": "BK = Black (African origins)",
+    "W": "W = White (Europe, N. Africa, Middle East)",
+    "H": "H = Hispanic Origin",
+    "O": "O = Not of Hispanic Origin",
+    "U": "U = Unknown"
+}
+
 AAMVA_TAGS_MAP = {
     "DAQ": "证件号码", "DCS": "姓", "DAC": "名", "DAD": "中间名",
     "DBB": "出生日期", "DBD": "签发日期", "DBA": "过期日期", "DBC": "性别",
@@ -54,7 +64,6 @@ def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
-    # 按照严格字段顺序构建
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -102,16 +111,16 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. UI 界面 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 字段全能解析", layout="wide")
+    st.set_page_config(page_title="AAMVA 专家版", layout="wide")
     
     with st.sidebar:
-        st.header("⚙️ 字段隐藏选项")
+        st.header("⚙️ 隐藏选项")
         h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
         h_h = st.checkbox("隐藏身高 (DAU)", False)
         h_w = st.checkbox("隐藏体重 (DAW)", False)
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
         h_hair = st.checkbox("隐藏发色 (DAZ)", False)
-        h_race = st.checkbox("隐藏种族 (DCL)", True)
+        h_race = st.checkbox("隐藏种族 (DCL)", False) # 改为默认显示以便测试下拉菜单
         h_icn = st.checkbox("隐藏 ICN (DCK)", False)
         h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
         
@@ -123,13 +132,11 @@ def main():
     # --- 第一板块：姓名与居住信息 ---
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
-        # 姓名一行均匀分布
         name_cols = st.columns(3)
-        ln = name_cols[0].text_input("姓 (Last Name - DCS)", "SOLOMON")
-        fn = name_cols[1].text_input("名 (First Name - DAC)", "DANIEL")
-        mn = name_cols[2].text_input("中 (Middle Name - DAD)", "NONE")
+        ln = name_cols[0].text_input("姓 (DCS)", "SOLOMON")
+        fn = name_cols[1].text_input("名 (DAC)", "DANIEL")
+        mn = name_cols[2].text_input("中 (DAD)", "NONE")
         
-        # 地址分布
         addr_cols = st.columns([2, 1, 1])
         addr = addr_cols[0].text_input("街道 (DAG)", "29810 224TH AVE SE")
         city = addr_cols[1].text_input("城市 (DAI)", "KENT")
@@ -166,12 +173,10 @@ def main():
     # --- 第三板块：身体特征与特殊标识 ---
     st.subheader("🏃 身体特征与特殊标识")
     with st.container(border=True):
-        # 确定需要显示的物理特征字段
         phys_items = []
-        # 性别固定显示在此处
         phys_items.append(("sex", "性别 (DBC)", ["1", "2", "9", "0"]))
         
-        if not h_race: phys_items.append(("race", "种族 (DCL)", "W"))
+        if not h_race: phys_items.append(("race", "种族 (DCL)", list(RACE_OPTIONS.keys())))
         if not h_h:    phys_items.append(("height", "身高", "072"))
         if not h_w:    phys_items.append(("weight", "体重", "175"))
         if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
@@ -184,6 +189,8 @@ def main():
             key, label = item[0], item[1]
             if key == "sex":
                 phys_vals["sex"] = p_cols[i].selectbox(label, item[2], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
+            elif key == "race":
+                phys_vals["race"] = p_cols[i].selectbox(label, item[2], format_func=lambda x: RACE_OPTIONS[x], help="选择对应的种族代码")
             else:
                 phys_vals[key] = p_cols[i].text_input(label, item[2])
         
@@ -216,7 +223,7 @@ def main():
                 with st.expander("Hex Dump"): st.code(format_hex_dump(raw_data))
 
             with r_col:
-                st.subheader("🔍 自动解析核对")
+                st.subheader("🔍 解析核对")
                 raw_text = raw_data.decode('latin-1')
                 if "DL" in raw_text:
                     content = raw_text.split("DL", 1)[1]
