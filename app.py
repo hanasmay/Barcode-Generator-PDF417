@@ -43,7 +43,7 @@ AAMVA_TAGS_MAP = {
     "DAG": "街道地址", "DAH": "详细地址(Line 2)", "DAI": "城市", "DAJ": "州代码", 
     "DAK": "邮政编码", "DCF": "鉴别码", "DDA": "REAL ID 状态", "DCJ": "审计码", 
     "DDB": "修订日期", "DCA": "类型", "DCB": "限制", "DCD": "背书", 
-    "DCH": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
+    "DCK": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
 }
 
 # ==================== 3. 核心辅助函数 ====================
@@ -115,13 +115,13 @@ def build_aamva_stream(inputs, options):
     if not options['hide_weight']: body.append(f"DAW{inputs['weight']}\x0a")
     if not options['hide_hair']:   body.append(f"DAZ{inputs['hair'].upper()}\x0a")
     if not options['hide_race']:   body.append(f"DCL{inputs['race'].upper()}\x0a")
-    if not options['hide_icn']:    body.append(f"DCH{inputs['icn'].upper()}\x0a")
+    if not options['hide_icn']:    body.append(f"DCK{inputs['icn'].upper()}\x0a")
     
     body.append(f"DDA{'F' if inputs['real_id'] else 'N'}\x0a")
     body.append(f"DDB{clean_date(inputs['rev_date'])}\x0a")
     
-    if inputs['veteran']: body.append(f"DDLY\x0a")
-    if inputs['donor']:   body.append(f"DDKY\x0a")
+    if inputs['veteran']: body.append(f"DDL1\x0a")
+    if inputs['donor']:   body.append(f"DDK1\x0a")
     if not options['hide_audit']: body.append(f"DCJ{inputs['audit'].upper()}\x0a")
     
     sub_data = "DL" + "".join(body)
@@ -137,7 +137,7 @@ def main():
     
     with st.sidebar:
         st.header("⚙️ 侧边栏配置")
-        target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
+        target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=0)
         sel_cols = st.slider("预览列数", 9, 20, 17)
         st.markdown("---")
         h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
@@ -145,7 +145,7 @@ def main():
         h_w = st.checkbox("隐藏体重 (DAW)", False)
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
         h_hair = st.checkbox("隐藏发色 (DAZ)", False)
-        h_icn = st.checkbox("隐藏 ICN (DCH)", False)
+        h_icn = st.checkbox("隐藏 ICN (DCK)", False)
         h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
         h_race = st.checkbox("隐藏种族 (DCL)", True)
         opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
@@ -194,7 +194,7 @@ def main():
         if not h_w:    phys_items.append(("weight", "体重", "175"))
         if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
         if not h_hair: phys_items.append(("hair", "发色", "BRO"))
-        if not h_icn:   phys_items.append(("icn", "ICN (DCH)", "123456789012345"))
+        if not h_icn:   phys_items.append(("icn", "ICN (DCK)", "123456789012345"))
         if not h_audit: phys_items.append(("audit", "审计码 (DCJ)", "A020424988483"))
         
         phys_vals = {}
