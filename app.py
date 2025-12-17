@@ -77,8 +77,11 @@ def build_aamva_stream(inputs, options):
     if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
     if not options['hide_hair']:   body.append(f"DAZ{inputs['hair'].upper()}\x0a")
     if not options['hide_race']:   body.append(f"DCL{inputs['race'].upper()}\x0a")
-    if not options['hide_donor']:  body.append(f"DDK{'Y' if inputs['donor'] else 'N'}\x0a")
-    if not options['hide_vet']:    body.append(f"DDI{'Y' if inputs['veteran'] else 'N'}\x0a")
+    
+    # --- 核心逻辑：仅在选中时输出 ---
+    if inputs['donor']:   body.append(f"DDKY\x0a")
+    if inputs['veteran']: body.append(f"DDIY\x0a")
+    
     if not options['hide_icn']:    body.append(f"DCH{inputs['icn'].upper()}\x0a")
     
     body.append(f"DAG{inputs['address'].upper()}\x0a")
@@ -116,8 +119,6 @@ def main():
         hide_w = st.checkbox("隐藏体重 (DAW)")
         hide_e = st.checkbox("隐藏眼色 (DAY)")
         hide_hair = st.checkbox("隐藏发色 (DAZ)")
-        hide_donor = st.checkbox("隐藏捐献标识 (DDK)", True)
-        hide_vet = st.checkbox("隐藏服役标识 (DDI)", True)
         
         st.markdown("---")
         st.subheader("📋 证件字段隐藏")
@@ -126,7 +127,6 @@ def main():
         hide_race = st.checkbox("隐藏种族 (DCL)", True)
         
         opts = {'hide_height':hide_h,'hide_weight':hide_w,'hide_eyes':hide_e,'hide_hair':hide_hair,
-                'hide_donor':hide_donor, 'hide_vet':hide_vet,
                 'hide_icn':hide_icn,'hide_audit':hide_a,'hide_race':hide_race}
         st.markdown("---")
         sel_cols = st.slider("列数设置 (Columns)", 9, 20, 15)
@@ -166,7 +166,6 @@ def main():
     phys_c = st.columns(5)
     active_idx = 0
     h_v, w_v, e_v, hr_v, r_v = "072", "175", "BLU", "BRO", "W"
-    donor_v, vet_v = False, False
     
     if not opts['hide_height']: h_v = phys_c[active_idx % 5].text_input("身高", h_v); active_idx += 1
     if not opts['hide_weight']: w_v = phys_c[active_idx % 5].text_input("体重", w_v); active_idx += 1
@@ -174,11 +173,11 @@ def main():
     if not opts['hide_hair']:   hr_v = phys_c[active_idx % 5].text_input("发色", hr_v).upper(); active_idx += 1
     if not opts['hide_race']:   r_v = phys_c[active_idx % 5].text_input("种族 (DCL)", r_v).upper(); active_idx += 1
     
-    # 捐献与服役开关（放在物理特征区最后）
-    st.markdown("##### 特殊标识")
+    # 捐献与服役开关（永久保留在主界面）
+    st.markdown("##### 特殊标识 (选中后才会被写入条码)")
     sb1, sb2 = st.columns(2)
-    if not opts['hide_donor']: donor_v = sb1.toggle("器官捐献者 (DDK)", False)
-    if not opts['hide_vet']:   vet_v = sb2.toggle("退伍军人 (DDI)", False)
+    donor_v = sb1.toggle("器官捐献者 (DDK)", False)
+    vet_v = sb2.toggle("退伍军人 (DDI)", False)
 
     if st.button("🚀 执行 AAMVA 全面分析", type="primary", use_container_width=True):
         inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'race':r_v,'donor':donor_v,'veteran':vet_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
