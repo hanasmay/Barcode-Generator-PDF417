@@ -35,7 +35,8 @@ AAMVA_TAGS_MAP = {
     "DAK": "邮政编码 (Zip)", "DCF": "鉴别码 (Discriminator)", "DDA": "REAL ID 状态",
     "DCJ": "审计码 (Audit)", "DDB": "版面修订日期 (Revision Date)", 
     "DCA": "类型 (Class)", "DCB": "限制 (Restrictions)", "DCD": "背书 (Endorsements)",
-    "DCH": "ICN (Inventory Control Number)"
+    "DCH": "ICN (Inventory Control Number)", "DCL": "种族 (Race)",
+    "DDEN": "名(空标识符)", "DDFN": "姓(空标识符)", "DDGN": "名(空标识符)"
 }
 
 # ==================== 2. 核心辅助函数 ====================
@@ -70,8 +71,11 @@ def build_aamva_stream(inputs, options):
     body = [
         f"DAQ{inputs['dl_number'].upper()}\x0a", 
         f"DCS{inputs['last_name'].upper()}\x0a",
+        f"DDEN\x0a", # 新增空标识符
         f"DAC{inputs['first_name'].upper()}\x0a", 
+        f"DDFN\x0a", # 新增空标识符
         f"DAD{inputs['middle_name'].upper()}\x0a",
+        f"DDGN\x0a", # 新增空标识符
         f"DCA{inputs['class'].upper()}\x0a",
         f"DCB{inputs['rest'].upper()}\x0a",
         f"DCD{inputs['end'].upper()}\x0a",
@@ -84,6 +88,7 @@ def build_aamva_stream(inputs, options):
     if not options['hide_weight']: body.append(f"DAW{inputs['weight']}\x0a")
     if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
     if not options['hide_hair']:   body.append(f"DAZ{inputs['hair'].upper()}\x0a")
+    if not options['hide_race']:   body.append(f"DCL{inputs['race'].upper()}\x0a")
     if not options['hide_icn']:    body.append(f"DCH{inputs['icn'].upper()}\x0a")
     
     body.append(f"DAG{inputs['address'].upper()}\x0a")
@@ -121,11 +126,12 @@ def main():
             'hide_weight': st.checkbox("隐藏体重"),
             'hide_eyes': st.checkbox("隐藏眼色"), 
             'hide_hair': st.checkbox("隐藏发色"),
+            'hide_race': st.checkbox("隐藏种族 (DCL)", True), # 默认隐藏
             'hide_icn': st.checkbox("隐藏 ICN (DCH)", False),
             'hide_audit': st.checkbox("隐藏审计码 (DCJ)", True)
         }
         st.markdown("---")
-        sel_cols = st.slider("预览列数 (Columns)", 9, 20, 15)
+        sel_cols = st.slider("列数设置 (Columns)", 9, 20, 15)
 
     c1, c2 = st.columns(2)
     with c1:
@@ -141,7 +147,6 @@ def main():
 
     with c2:
         st.subheader("📝 证件类型与代码")
-        # 严格按照顺序：证件号 -> Real ID -> 鉴别码 -> ICN -> 类型 -> 限制 -> 背书
         dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B").upper()
         real_id = st.toggle("符合 REAL ID 标准 (DDA)", True)
         dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483").upper()
@@ -162,30 +167,32 @@ def main():
     st.markdown("---")
     st.subheader("🏠 地址与物理特征")
     
-    # 第一排顺序：街道、城市、邮编、性别
+    # 第一排
     addr_row = st.columns(4)
     addr = addr_row[0].text_input("街道 (DAG)", "29810 224TH AVE SE").upper()
     city = addr_row[1].text_input("城市 (DAI)", "KENT").upper()
     zip_c = addr_row[2].text_input("邮编 (DAK)", "98010")
     sex = addr_row[3].selectbox("性别 (DBC)", ["1", "2"], format_func=lambda x: "男 (1)" if x=="1" else "女 (2)")
 
-    # 第二排：身高、体重、眼色、发色（动态列）
-    phys_row = st.columns(4)
+    # 第二排
+    phys_row = st.columns(5) # 增加一列给 Race
     active_idx = 0
-    h_v, w_v, e_v, hr_v = "072", "175", "BLU", "BRO"
+    h_v, w_v, e_v, hr_v, r_v = "072", "175", "BLU", "BRO", "W"
     
     if not opts['hide_height']:
-        h_v = phys_row[active_idx % 4].text_input("身高", h_v); active_idx += 1
+        h_v = phys_row[active_idx].text_input("身高", h_v); active_idx += 1
     if not opts['hide_weight']:
-        w_v = phys_row[active_idx % 4].text_input("体重", w_v); active_idx += 1
+        w_v = phys_row[active_idx].text_input("体重", w_v); active_idx += 1
     if not opts['hide_eyes']:
-        e_v = phys_row[active_idx % 4].text_input("眼色", e_v).upper(); active_idx += 1
+        e_v = phys_row[active_idx].text_input("眼色", e_v).upper(); active_idx += 1
     if not opts['hide_hair']:
-        hr_v = phys_row[active_idx % 4].text_input("发色", hr_v).upper()
+        hr_v = phys_row[active_idx].text_input("发色", hr_v).upper(); active_idx += 1
+    if not opts['hide_race']:
+        r_v = phys_row[active_idx].text_input("种族 (DCL)", r_v).upper()
 
     # --- 执行逻辑 ---
-    if st.button("🚀 生成条码并执行 AAMVA 深度解析", type="primary", use_container_width=True):
-        inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
+    if st.button("🚀 执行 AAMVA 全面分析", type="primary", use_container_width=True):
+        inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'race':r_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
@@ -214,7 +221,7 @@ def main():
                 for line in data_part.split('\x0a'):
                     if len(line)>=3:
                         tag = line[:3]
-                        parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP.get(tag, "其他"), "解析值": line[3:].strip()})
+                        parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP.get(tag, "标识符"), "解析值": line[3:].strip()})
                 st.table(pd.DataFrame(parsed))
                 with st.expander("查看原始明文流"):
                     st.text(raw_text)
