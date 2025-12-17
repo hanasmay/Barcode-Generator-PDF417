@@ -12,7 +12,7 @@ try:
 except ImportError:
     st.error("缺失依赖库！请运行: pip install pdf417 Pillow pandas streamlit")
 
-# ==================== 2. AAMVA 数据映射 ====================
+# ==================== 2. 数据映射 ====================
 JURISDICTION_MAP = {
     "AL": "636033", "AK": "636059", "AZ": "636026", "AR": "636021", "CA": "636014",
     "CO": "636020", "CT": "636006", "DE": "636011", "DC": "636043", "FL": "636010",
@@ -36,7 +36,7 @@ AAMVA_TAGS_MAP = {
     "DCK": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
 }
 
-# ==================== 3. 核心工具 ====================
+# ==================== 3. 核心函数 ====================
 
 def clean_date(date_str):
     return re.sub(r'[^0-9]', '', date_str)
@@ -54,7 +54,7 @@ def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
-    # 按照要求的严格顺序
+    # 按照严格字段顺序构建
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -73,13 +73,11 @@ def build_aamva_stream(inputs, options):
     if not options['hide_height']: body.append(f"DAU{inputs['height']} IN\x0a")
     if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
     
-    # 地址部分
     body.append(f"DAG{inputs['address'].upper()}\x0a")
     if not options['hide_dah']:   body.append(f"DAH{inputs['dah'].upper()}\x0a")
     body.append(f"DAI{inputs['city'].upper()}\x0a")
     body.append(f"DAJ \x0a")
     body.append(f"DAK{clean_date(inputs['zip'])}  \x0a")
-    
     body.append(f"DCF{inputs['dd_code'].upper()}\x0a")
     body.append(f"DCGUSA\x0a")
     
@@ -101,14 +99,14 @@ def build_aamva_stream(inputs, options):
     designator = f"DL0032{len(subfile_bytes):04d}".encode('latin-1')
     return header + designator + b"\x0d" + subfile_bytes
 
-# ==================== 4. 主界面 ====================
+# ==================== 4. UI 界面 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
+    st.set_page_config(page_title="AAMVA 字段全能解析", layout="wide")
     
     with st.sidebar:
-        st.header("⚙️ 隐藏选项")
-        h_dah = st.checkbox("隐藏详细地址 (DAH)", True) # 默认隐藏
+        st.header("⚙️ 字段隐藏选项")
+        h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
         h_h = st.checkbox("隐藏身高 (DAU)", False)
         h_w = st.checkbox("隐藏体重 (DAW)", False)
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
@@ -125,19 +123,20 @@ def main():
     # --- 第一板块：姓名与居住信息 ---
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
-        r1_cols = st.columns(4)
-        ln = r1_cols[0].text_input("姓 (DCS)", "SOLOMON")
-        fn = r1_cols[1].text_input("名 (DAC)", "DANIEL")
-        mn = r1_cols[2].text_input("中 (DAD)", "NONE")
-        sex = r1_cols[3].selectbox("性别 (DBC)", ["1", "2", "9", "0"], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
+        # 姓名一行均匀分布
+        name_cols = st.columns(3)
+        ln = name_cols[0].text_input("姓 (Last Name - DCS)", "SOLOMON")
+        fn = name_cols[1].text_input("名 (First Name - DAC)", "DANIEL")
+        mn = name_cols[2].text_input("中 (Middle Name - DAD)", "NONE")
         
-        r2_cols = st.columns([2, 1, 1])
-        addr = r2_cols[0].text_input("街道 (DAG)", "29810 224TH AVE SE")
-        city = r2_cols[1].text_input("城市 (DAI)", "KENT")
-        zip_c = r2_cols[2].text_input("邮编 (DAK)", "98010")
+        # 地址分布
+        addr_cols = st.columns([2, 1, 1])
+        addr = addr_cols[0].text_input("街道 (DAG)", "29810 224TH AVE SE")
+        city = addr_cols[1].text_input("城市 (DAI)", "KENT")
+        zip_c = addr_cols[2].text_input("邮编 (DAK)", "98010")
         
         if not h_dah:
-            dah_val = st.text_input("详细地址/第二行 (DAH)", "UNIT 101")
+            dah_val = st.text_input("详细地址/第二行 (DAH)", "")
         else:
             dah_val = ""
 
@@ -146,7 +145,7 @@ def main():
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
         dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
-        cl = c2.text_input("类型 (DCA)", "D")
+        cl = c2.text_input("准驾类型 (DCA)", "D")
         real_id = c3.toggle("REAL ID (DDA)", True)
         
         date_cols = st.columns(4)
@@ -160,15 +159,18 @@ def main():
         rs = info_cols[1].text_input("限制 (DCB)", "NONE")
         ed = info_cols[2].text_input("背书 (DCD)", "NONE")
         
-        # 动态显示 ICN 和 审计码
         extra_cols = st.columns(2)
         icn_val = extra_cols[0].text_input("ICN (DCK)", "123456789012345") if not h_icn else ""
         audit_val = extra_cols[1].text_input("审计码 (DCJ)", "A020424988483") if not h_audit else ""
 
-    # --- 第三板块：身体特征 ---
+    # --- 第三板块：身体特征与特殊标识 ---
     st.subheader("🏃 身体特征与特殊标识")
     with st.container(border=True):
+        # 确定需要显示的物理特征字段
         phys_items = []
+        # 性别固定显示在此处
+        phys_items.append(("sex", "性别 (DBC)", ["1", "2", "9", "0"]))
+        
         if not h_race: phys_items.append(("race", "种族 (DCL)", "W"))
         if not h_h:    phys_items.append(("height", "身高", "072"))
         if not h_w:    phys_items.append(("weight", "体重", "175"))
@@ -176,23 +178,27 @@ def main():
         if not h_hair: phys_items.append(("hair", "发色", "BRO"))
         
         phys_vals = {}
-        if phys_items:
-            p_cols = st.columns(len(phys_items))
-            for i, (key, label, default) in enumerate(phys_items):
-                phys_vals[key] = p_cols[i].text_input(label, default)
+        p_cols = st.columns(len(phys_items))
+        
+        for i, item in enumerate(phys_items):
+            key, label = item[0], item[1]
+            if key == "sex":
+                phys_vals["sex"] = p_cols[i].selectbox(label, item[2], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
+            else:
+                phys_vals[key] = p_cols[i].text_input(label, item[2])
         
         st.markdown("---")
         sb1, sb2 = st.columns(2)
         vet = sb1.toggle("退伍军人 (DDL)", False)
         don = sb2.toggle("器官捐献 (DDK)", False)
 
-    if st.button("🚀 生成并深度分析", type="primary", use_container_width=True):
+    if st.button("🚀 生成并深度核对分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
-            'sex': sex, 'address': addr, 'dah': dah_val, 'city': city, 'zip': zip_c, 
-            'height': phys_vals.get("height", "0"), 'weight': phys_vals.get("weight", "0"), 
-            'eyes': phys_vals.get("eyes", ""), 'hair': phys_vals.get("hair", ""), 
+            'sex': phys_vals["sex"], 'address': addr, 'dah': dah_val, 'city': city, 'zip': zip_c, 
+            'height': phys_vals.get("height", "072"), 'weight': phys_vals.get("weight", "175"), 
+            'eyes': phys_vals.get("eyes", "BLU"), 'hair': phys_vals.get("hair", "BRO"), 
             'race': phys_vals.get("race", "W"), 'donor': don, 'veteran': vet, 
             'real_id': real_id, 'dd_code': dcf, 'icn': icn_val, 'audit': audit_val,
             'class': cl, 'rest': rs, 'end': ed
@@ -210,7 +216,7 @@ def main():
                 with st.expander("Hex Dump"): st.code(format_hex_dump(raw_data))
 
             with r_col:
-                st.subheader("🔍 解析核对")
+                st.subheader("🔍 自动解析核对")
                 raw_text = raw_data.decode('latin-1')
                 if "DL" in raw_text:
                     content = raw_text.split("DL", 1)[1]
@@ -223,7 +229,7 @@ def main():
                                 parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "值": clean_line[3:]})
                     st.table(pd.DataFrame(parsed))
         except Exception as e:
-            st.error(f"失败: {e}")
+            st.error(f"逻辑错误: {e}")
 
 if __name__ == "__main__":
     main()
