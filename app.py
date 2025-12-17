@@ -119,35 +119,42 @@ def main():
         opts = {
             'hide_height': st.checkbox("隐藏身高"), 'hide_weight': st.checkbox("隐藏体重"),
             'hide_eyes': st.checkbox("隐藏眼色"), 'hide_hair': st.checkbox("隐藏发色"),
-            'hide_icn': st.checkbox("隐藏 ICN", False),
-            'hide_audit': st.checkbox("隐藏审计码", True)
+            'hide_icn': st.checkbox("隐藏 ICN (DCH)", False),
+            'hide_audit': st.checkbox("隐藏审计码 (DCJ)", True)
         }
         st.markdown("---")
         sel_cols = st.slider("列数设置 (Columns)", 9, 20, 15)
 
     c1, c2 = st.columns(2)
     with c1:
-        st.subheader("👤 身份信息")
-        ln = st.text_input("姓 (DCS)", "SOLOMON").upper()
-        fn = st.text_input("名 (DAC)", "DANIEL").upper()
-        mn = st.text_input("中间名 (DAD)", "NONE").upper()
-        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B").upper()
-        icn = st.text_input("ICN (DCH)", "123456789012345").upper() if not opts['hide_icn'] else "0000000000"
-        real_id = st.toggle("符合 REAL ID 标准", True)
+        st.subheader("👤 个人姓名信息")
+        ln = st.text_input("姓 (Last Name - DCS)", "SOLOMON").upper()
+        fn = st.text_input("名 (First Name - DAC)", "DANIEL").upper()
+        mn = st.text_input("中间名 (Middle Name - DAD)", "NONE").upper()
         sex = st.selectbox("性别 (DBC)", ["1", "2"], format_func=lambda x: "男 (1)" if x=="1" else "女 (2)")
-
-    with c2:
-        st.subheader("📝 证件类型与代码")
-        cls_val = st.text_input("类型 (CLASS - DCA)", "D").upper()
-        rest_val = st.text_input("限制 (REST - DCB)", "NONE").upper()
-        end_val = st.text_input("背书 (END - DCD)", "NONE").upper()
         st.markdown("---")
         dob = st.text_input("生日 (MMDDYYYY)", "08/08/1998")
         iss = st.text_input("签发日", "06/06/2024")
         exp = st.text_input("过期日", "08/08/2030")
         rev = st.text_input("修订日", "11/12/2019")
 
+    with c2:
+        st.subheader("📝 证件类型与代码")
+        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B").upper()
+        real_id = st.toggle("符合 REAL ID 标准 (DDA)", True)
+        cls_val = st.text_input("类型 (CLASS - DCA)", "D").upper()
+        dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483").upper()
+        icn = st.text_input("ICN (DCH)", "123456789012345").upper() if not opts['hide_icn'] else "0000000000"
+        rest_val = st.text_input("限制 (REST - DCB)", "NONE").upper()
+        end_val = st.text_input("背书 (END - DCD)", "NONE").upper()
+        
+        if not opts['hide_audit']:
+            audit_val = st.text_input("审计码 (DCJ)", "A020424988483").upper()
+        else:
+            audit_val = ""
+
     st.markdown("---")
+    st.subheader("🏠 地址与物理特征")
     addr_c = st.columns(3)
     addr = addr_c[0].text_input("街道 (DAG)", "29810 224TH AVE SE").upper()
     city = addr_c[1].text_input("城市 (DAI)", "KENT").upper()
@@ -158,12 +165,9 @@ def main():
     w_v = phys_c[1].text_input("体重", "175") if not opts['hide_weight'] else "175"
     e_v = phys_c[2].text_input("眼色", "BLU") if not opts['hide_eyes'] else "BLU"
     hr_v = phys_c[3].text_input("发色", "BRO") if not opts['hide_hair'] else "BRO"
-    
-    dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483").upper()
-    audit = st.text_input("审计码 (DCJ)", "A020424988483").upper() if not opts['hide_audit'] else ""
 
     if st.button("🚀 执行 AAMVA 全面分析", type="primary", use_container_width=True):
-        inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'real_id':real_id,'dd_code':dcf,'audit':audit}
+        inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
