@@ -26,7 +26,6 @@ JURISDICTION_MAP = {
     "VT": "636024", "VA": "636000", "WA": "636045", "WV": "636061", "WI": "636031", "WY": "636060"
 }
 
-# 种族中文描述字典
 RACE_OPTIONS = {
     "AI": "AI = 阿拉斯加原住民或美洲印第安人 (起源于北美原始民族，维持部落或社区文化认同)",
     "AP": "AP = 亚裔或太平洋岛民 (起源于远东、东南亚或太平洋群岛，包括中国、印度、日本、韩国、菲律宾、萨摩亚等)",
@@ -47,7 +46,7 @@ AAMVA_TAGS_MAP = {
     "DCK": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
 }
 
-# ==================== 3. 核心工具函数 ====================
+# ==================== 3. 核心辅助函数 ====================
 
 def clean_date(date_str):
     return re.sub(r'[^0-9]', '', date_str)
@@ -65,7 +64,6 @@ def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
-    # 按照严格字段顺序构建
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -115,19 +113,24 @@ def build_aamva_stream(inputs, options):
 def main():
     st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
     
+    # 侧边栏逻辑：先显示基本配置，隐藏开关挪到底部
     with st.sidebar:
+        st.header("📍 地区与规格")
+        target_state = st.selectbox("目标州 (IIN)", list(JURISDICTION_MAP.keys()), index=47)
+        sel_cols = st.slider("条码列数 (Columns)", 9, 20, 15)
+        
+        st.markdown("---")
         st.header("⚙️ 隐藏与全局设置")
+        # 隐藏项目顺序调整
         h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
         h_h = st.checkbox("隐藏身高 (DAU)", False)
         h_w = st.checkbox("隐藏体重 (DAW)", False)
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
         h_hair = st.checkbox("隐藏发色 (DAZ)", False)
-        h_race = st.checkbox("隐藏种族 (DCL)", True)  # 默认隐藏种族
         h_icn = st.checkbox("隐藏 ICN (DCK)", False)
         h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
+        h_race = st.checkbox("隐藏种族 (DCL)", True) # 挪到审计码下面
         
-        target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
-        sel_cols = st.slider("预览列数", 9, 20, 15)
         opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
                 'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
@@ -135,9 +138,9 @@ def main():
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         name_cols = st.columns(3)
-        ln = name_cols[0].text_input("姓氏 (Last Name - DCS)", "SOLOMON")
-        fn = name_cols[1].text_input("名字 (First Name - DAC)", "DANIEL")
-        mn = name_cols[2].text_input("中间名 (Middle Name - DAD)", "NONE")
+        ln = name_cols[0].text_input("姓氏 (DCS)", "SOLOMON")
+        fn = name_cols[1].text_input("名字 (DAC)", "DANIEL")
+        mn = name_cols[2].text_input("中间名 (DAD)", "NONE")
         
         addr_cols = st.columns([2, 1, 1])
         addr = addr_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
@@ -149,7 +152,7 @@ def main():
         else:
             dah_val = ""
 
-    # --- 第二板块：证件信息 ---
+    # --- 第二板块：证件核心信息 ---
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
@@ -164,12 +167,12 @@ def main():
         rev = date_cols[3].text_input("修订日 (DDB)", "11122019")
         
         info_cols = st.columns(3)
-        dcf = info_cols[0].text_input("证件识别码/鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
+        dcf = info_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
         rs = info_cols[1].text_input("限制代码 (DCB)", "NONE")
         ed = info_cols[2].text_input("背书代码 (DCD)", "NONE")
         
         extra_cols = st.columns(2)
-        icn_val = extra_cols[0].text_input("库存控制号 (DCK/ICN)", "123456789012345") if not h_icn else ""
+        icn_val = extra_cols[0].text_input("库存控制号 (ICN/DCK)", "123456789012345") if not h_icn else ""
         audit_val = extra_cols[1].text_input("审计代码 (DCJ)", "A020424988483") if not h_audit else ""
 
     # --- 第三板块：身体特征与特殊标识 ---
@@ -201,7 +204,7 @@ def main():
         vet = sb1.toggle("退伍军人标识 (DDL)", False)
         don = sb2.toggle("器官捐献标识 (DDK)", False)
 
-    if st.button("🚀 生成条码并执行深度分析", type="primary", use_container_width=True):
+    if st.button("🚀 生成并执行深度 AAMVA 分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
@@ -215,15 +218,17 @@ def main():
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
+            L = len(raw_data)
             l_col, r_col = st.columns([1, 1.2])
             with l_col:
-                st.subheader("📊 PDF417 条码预览")
+                st.subheader("📊 条码预览")
                 codes = encode(raw_data, columns=sel_cols, security_level=5)
                 st.image(render_image(codes, scale=3))
-                with st.expander("查看十六进制数据 (Hex Dump)"): st.code(format_hex_dump(raw_data))
+                st.info(f"字节数: {L} | {sel_cols} 列 x {len(codes)} 行")
+                with st.expander("十六进制 (Hex Dump)"): st.code(format_hex_dump(raw_data))
 
             with r_col:
-                st.subheader("🔍 AAMVA 字段自动解析")
+                st.subheader("🔍 AAMVA 解析核对")
                 raw_text = raw_data.decode('latin-1')
                 if "DL" in raw_text:
                     content = raw_text.split("DL", 1)[1]
@@ -236,7 +241,7 @@ def main():
                                 parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "内容": clean_line[3:]})
                     st.table(pd.DataFrame(parsed))
         except Exception as e:
-            st.error(f"逻辑执行失败: {e}")
+            st.error(f"失败: {e}")
 
 if __name__ == "__main__":
     main()
