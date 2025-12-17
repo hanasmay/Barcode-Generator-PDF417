@@ -31,7 +31,6 @@ RACE_OPTIONS = {
     "BK": "BK = 非裔 (非洲黑人)",
     "AI": "AI = 阿拉斯加原住民或美洲印第安人",
     "AP": "AP = 亚裔或太平洋岛民",
-    "BK": "BK = 非裔 (非洲黑人)",
     "H":  "H = 西班牙裔",
     "O":  "O = 非西班牙裔",
     "U":  "U = 未知"
@@ -79,6 +78,7 @@ def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
+    # 按照 AAMVA 标准子文件内字段物理顺序
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -102,12 +102,8 @@ def build_aamva_stream(inputs, options):
     body.append(f"DAI{inputs['city'].upper()}\x0a")
     body.append(f"DAJ{inputs['state'].upper()}\x0a")
     
-    # --- 邮编自动补齐逻辑 ---
     zip_raw = re.sub(r'[^0-9]', '', inputs['zip'])
-    if len(zip_raw) == 5:
-        zip_final = zip_raw + "0000"
-    else:
-        zip_final = zip_raw
+    zip_final = zip_raw + "0000" if len(zip_raw) == 5 else zip_raw
     body.append(f"DAK{zip_final}  \x0a")
     
     body.append(f"DCF{inputs['dd_code'].upper()}\x0a")
@@ -116,8 +112,8 @@ def build_aamva_stream(inputs, options):
     if not options['hide_weight']: body.append(f"DAW{inputs['weight']}\x0a")
     if not options['hide_hair']:   body.append(f"DAZ{inputs['hair'].upper()}\x0a")
     if not options['hide_race']:   body.append(f"DCL{inputs['race'].upper()}\x0a")
-    if not options['hide_icn']:    body.append(f"DCK{inputs['icn'].upper()}\x0a")
     
+    if not options['hide_icn']:    body.append(f"DCK{inputs['icn'].upper()}\x0a")
     body.append(f"DDA{'F' if inputs['real_id'] else 'N'}\x0a")
     body.append(f"DDB{clean_date(inputs['rev_date'])}\x0a")
     
@@ -152,27 +148,27 @@ def main():
         opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
                 'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    # 姓名居住板块
+    # 1. 姓名与居住板块
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
-        ln = n_cols[0].text_input("姓氏 (DCS)", "CORDOVA")
-        fn = n_cols[1].text_input("名字 (DAC)", "CHARLES")
-        mn = n_cols[2].text_input("中间名 (DAD)", "NONE")
+        # --- 修正姓名排列顺序：名 -> 中 -> 姓 ---
+        fn = n_cols[0].text_input("名字 (DAC)", "CHARLES")
+        mn = n_cols[1].text_input("中间名 (DAD)", "NONE")
+        ln = n_cols[2].text_input("姓氏 (DCS)", "CORDOVA")
         
         a_cols = st.columns([2, 1, 1])
         addr = a_cols[0].text_input("街道地址 (DAG)", "3704 3RD PL NE")
         city = a_cols[1].text_input("城市 (DAI)", "CENTER POINT")
-        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "352151400")
-        
-        dah_val = st.text_input("详细地址/第二行地址 (DAH)", "APT 101") if not h_dah else ""
+        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "35215")
+        dah_val = st.text_input("详细地址 (DAH)", "APT 101") if not h_dah else ""
 
-    # 证件信息板块
+    # 2. 证件信息板块
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
         dl = c1.text_input("证件号 (DAQ)", "66004729")
-        cl = c2.text_input("类型 (DCA)", "D")
+        cl = c2.text_input("准驾等级 (DCA)", "D")
         real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
         
         d_cols = st.columns(4)
@@ -181,12 +177,16 @@ def main():
         exp = d_cols[2].text_input("过期日", "11/05/2027")
         rev = d_cols[3].text_input("修订日 (DDB)", "04/26/2022")
         
+        admin_cols = st.columns(2)
+        icn_input = admin_cols[0].text_input("ICN (DCK)", "66004729317182331201") if not h_icn else ""
+        audit_input = admin_cols[1].text_input("审计码 (DCJ)", "A020424988483") if not h_audit else ""
+
         i_cols = st.columns(3)
         dcf = i_cols[0].text_input("鉴别码 (DCF)", "NONE")
         rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
         ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
-    # 物理特征板块
+    # 3. 身体特征板块
     st.subheader("🏃 身体特征与代码")
     with st.container(border=True):
         phys_items = [("sex", "性别 (DBC)", ["1", "2", "9", "0"])]
@@ -195,8 +195,6 @@ def main():
         if not h_w:    phys_items.append(("weight", "体重", "181"))
         if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
         if not h_hair: phys_items.append(("hair", "发色", "BRO"))
-        if not h_icn:   phys_items.append(("icn", "ICN (DCK)", "66004729317182331201"))
-        if not h_audit: phys_items.append(("audit", "审计码 (DCJ)", "A020424988483"))
         
         phys_vals = {}
         p_cols = st.columns(len(phys_items) if phys_items else 1)
@@ -205,7 +203,7 @@ def main():
             if key == "sex":
                 phys_vals["sex"] = p_cols[i].selectbox(label, default, format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
             elif key == "race":
-                phys_vals["race"] = p_cols[i].selectbox(label, default, format_func=lambda x: RACE_OPTIONS[x])
+                phys_vals["race"] = p_cols[i].selectbox(label, default, index=0, format_func=lambda x: RACE_OPTIONS[x])
             else:
                 phys_vals[key] = p_cols[i].text_input(label, default)
         
@@ -214,15 +212,14 @@ def main():
         vet = b_cols[0].toggle("退伍军人标识 (DDL)", False)
         don = b_cols[1].toggle("器官捐献标识 (DDK)", False)
 
-    # 生成逻辑
     if st.button("🚀 生成并执行全面深度分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
             'sex': phys_vals.get("sex", "1"), 'address': addr, 'dah': dah_val, 'city': city, 'zip': zip_c, 
-            'height': phys_vals.get("height", "072"), 'weight': phys_vals.get("weight", "175"), 
+            'height': phys_vals.get("height", "070"), 'weight': phys_vals.get("weight", "181"), 
             'eyes': phys_vals.get("eyes", "BLU"), 'hair': phys_vals.get("hair", "BRO"), 
-            'race': phys_vals.get("race", "W"), 'icn': phys_vals.get("icn", ""), 'audit': phys_vals.get("audit", ""),
+            'race': phys_vals.get("race", "W"), 'icn': icn_input, 'audit': audit_input,
             'donor': don, 'veteran': vet, 'real_id': real_id, 'dd_code': dcf, 
             'class': cl, 'rest': rs, 'end': ed
         }
@@ -231,6 +228,7 @@ def main():
             raw_data = build_aamva_stream(inputs, opts)
             L = len(raw_data)
             l_col, r_col = st.columns([1.3, 1.4])
+            
             with l_col:
                 st.subheader("📊 PDF417 条码预览")
                 codes = encode(raw_data, columns=sel_cols, security_level=5)
