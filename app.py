@@ -27,12 +27,12 @@ JURISDICTION_MAP = {
 }
 
 RACE_OPTIONS = {
-    "AI": "AI = 阿拉斯加原住民或美洲印第安人 (起源于北美原始民族，维持部落或社区文化认同)",
-    "AP": "AP = 亚裔或太平洋岛民 (起源于远东、东南亚或太平洋群岛，包括中国、印度、日本、韩国、菲律宾、萨摩亚等)",
-    "BK": "BK = 非裔 (起源于非洲黑人种族)",
-    "W":  "W = 白人 (起源于欧洲、北非或中东原始民族)",
-    "H":  "H = 西班牙裔 (源自墨西哥、波多黎各、古巴、中南美洲或其他西班牙文化背景，无论种族)",
-    "O":  "O = 非西班牙裔 (除西班牙裔以外的任何人员)",
+    "AI": "AI = 阿拉斯加原住民或美洲印第安人",
+    "AP": "AP = 亚裔或太平洋岛民",
+    "BK": "BK = 非裔 (非洲黑人)",
+    "W":  "W = 白人 (欧洲、北非或中东)",
+    "H":  "H = 西班牙裔",
+    "O":  "O = 非西班牙裔",
     "U":  "U = 未知"
 }
 
@@ -46,7 +46,7 @@ AAMVA_TAGS_MAP = {
     "DCK": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
 }
 
-# ==================== 3. 核心辅助函数 ====================
+# ==================== 3. 核心算法函数 ====================
 
 def clean_date(date_str):
     return re.sub(r'[^0-9]', '', date_str)
@@ -59,6 +59,23 @@ def format_hex_dump(raw_bytes):
         ascii_part = "".join([chr(b) if 32 <= b <= 126 else "." for b in chunk])
         lines.append(f"{hex_part} | {ascii_part}")
     return "\n".join(lines)
+
+def reverse_pdf417_params(data_len, ecc_level=5):
+    """📐 逆向计算行列组合逻辑"""
+    ecc_map = {0:2, 1:4, 2:8, 3:16, 4:32, 5:64, 6:128, 7:256, 8:512}
+    ecc_codewords = ecc_map.get(ecc_level, 64)
+    # AAMVA 混合压缩模式下，平均 1 码词承载约 1.2-1.8 字节
+    data_codewords = math.ceil(data_len / 1.5) 
+    total_codewords = data_codewords + ecc_codewords + 1
+    
+    results = []
+    for cols in range(9, 21):
+        rows = math.ceil(total_codewords / cols)
+        if 3 <= rows <= 90:
+            # 标记 AAMVA 典型推荐值 (17列)
+            rec = "✅ 推荐" if cols == 17 else ""
+            results.append({"列数 (Cols)": cols, "行数 (Rows)": rows, "总码词": total_codewords, "备注": rec})
+    return pd.DataFrame(results)
 
 def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
@@ -111,30 +128,9 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. 主界面布局 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
+    st.set_page_config(page_title="AAMVA 参数计算专家", layout="wide")
     
-    # 侧边栏逻辑：先显示基本配置，隐藏开关挪到底部
-    with st.sidebar:
-        st.header("📍 地区与规格")
-        target_state = st.selectbox("目标州 (IIN)", list(JURISDICTION_MAP.keys()), index=47)
-        sel_cols = st.slider("条码列数 (Columns)", 9, 20, 15)
-        
-        st.markdown("---")
-        st.header("⚙️ 隐藏与全局设置")
-        # 隐藏项目顺序调整
-        h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
-        h_h = st.checkbox("隐藏身高 (DAU)", False)
-        h_w = st.checkbox("隐藏体重 (DAW)", False)
-        h_e = st.checkbox("隐藏眼色 (DAY)", False)
-        h_hair = st.checkbox("隐藏发色 (DAZ)", False)
-        h_icn = st.checkbox("隐藏 ICN (DCK)", False)
-        h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
-        h_race = st.checkbox("隐藏种族 (DCL)", True) # 挪到审计码下面
-        
-        opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
-                'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
-
-    # --- 第一板块：姓名与居住信息 ---
+    # --- 1. 顶部身份信息 ---
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         name_cols = st.columns(3)
@@ -146,102 +142,92 @@ def main():
         addr = addr_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
         city = addr_cols[1].text_input("城市 (DAI)", "KENT")
         zip_c = addr_cols[2].text_input("邮政编码 (DAK)", "98010")
-        
-        if not h_dah:
-            dah_val = st.text_input("详细地址/第二行地址 (DAH)", "")
-        else:
-            dah_val = ""
 
-    # --- 第二板块：证件核心信息 ---
+    # --- 2. 证件信息 ---
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
-        dl = c1.text_input("驾驶证/身份证号 (DAQ)", "WDL0ALXD2K1B")
-        cl = c2.text_input("准驾等级 (DCA)", "D")
-        real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
+        dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
+        cl = c2.text_input("类型 (DCA)", "D")
+        real_id = c3.toggle("REAL ID (DDA)", True)
         
         date_cols = st.columns(4)
-        dob = date_cols[0].text_input("生日 (DBB - MMDDYYYY)", "08081998")
-        iss = date_cols[1].text_input("签发日 (DBD)", "06062024")
-        exp = date_cols[2].text_input("过期日 (DBA)", "08082030")
+        dob = date_cols[0].text_input("生日 (MMDDYYYY)", "08081998")
+        iss = date_cols[1].text_input("签发日", "06062024")
+        exp = date_cols[2].text_input("过期日", "08082030")
         rev = date_cols[3].text_input("修订日 (DDB)", "11122019")
-        
-        info_cols = st.columns(3)
-        dcf = info_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
-        rs = info_cols[1].text_input("限制代码 (DCB)", "NONE")
-        ed = info_cols[2].text_input("背书代码 (DCD)", "NONE")
-        
-        extra_cols = st.columns(2)
-        icn_val = extra_cols[0].text_input("库存控制号 (ICN/DCK)", "123456789012345") if not h_icn else ""
-        audit_val = extra_cols[1].text_input("审计代码 (DCJ)", "A020424988483") if not h_audit else ""
 
-    # --- 第三板块：身体特征与特殊标识 ---
-    st.subheader("🏃 身体特征与特殊标识")
-    with st.container(border=True):
-        phys_items = []
-        phys_items.append(("sex", "性别 (DBC)", ["1", "2", "9", "0"]))
-        
-        if not h_race: phys_items.append(("race", "种族代码 (DCL)", list(RACE_OPTIONS.keys())))
-        if not h_h:    phys_items.append(("height", "身高", "072"))
-        if not h_w:    phys_items.append(("weight", "体重", "175"))
-        if not h_e:    phys_items.append(("eyes", "眼睛颜色", "BLU"))
-        if not h_hair: phys_items.append(("hair", "头发颜色", "BRO"))
-        
-        phys_vals = {}
-        if phys_items:
-            p_cols = st.columns(len(phys_items))
-            for i, item in enumerate(phys_items):
-                key, label = item[0], item[1]
-                if key == "sex":
-                    phys_vals["sex"] = p_cols[i].selectbox(label, item[2], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
-                elif key == "race":
-                    phys_vals["race"] = p_cols[i].selectbox(label, item[2], format_func=lambda x: RACE_OPTIONS[x])
-                else:
-                    phys_vals[key] = p_cols[i].text_input(label, item[2])
+    # --- 3. 侧边栏及隐藏设置 ---
+    with st.sidebar:
+        st.header("📍 地区与规格")
+        target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
+        sel_cols = st.slider("条码列数 (预览用)", 9, 20, 17)
         
         st.markdown("---")
-        sb1, sb2 = st.columns(2)
-        vet = sb1.toggle("退伍军人标识 (DDL)", False)
-        don = sb2.toggle("器官捐献标识 (DDK)", False)
+        st.header("⚙️ 隐藏与全局设置")
+        h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
+        h_h = st.checkbox("隐藏身高 (DAU)", False)
+        h_w = st.checkbox("隐藏体重 (DAW)", False)
+        h_e = st.checkbox("隐藏眼色 (DAY)", False)
+        h_hair = st.checkbox("隐藏发色 (DAZ)", False)
+        h_icn = st.checkbox("隐藏 ICN (DCK)", False)
+        h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
+        h_race = st.checkbox("隐藏种族 (DCL)", True)
+        
+        opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
+                'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    if st.button("🚀 生成并执行深度 AAMVA 分析", type="primary", use_container_width=True):
+    # --- 4. 生成按钮与分析 ---
+    if st.button("🚀 执行全面参数逆向计算与生成", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
-            'sex': phys_vals.get("sex", "1"), 'address': addr, 'dah': dah_val, 'city': city, 'zip': zip_c, 
-            'height': phys_vals.get("height", "072"), 'weight': phys_vals.get("weight", "175"), 
-            'eyes': phys_vals.get("eyes", "BLU"), 'hair': phys_vals.get("hair", "BRO"), 
-            'race': phys_vals.get("race", "W"), 'donor': don, 'veteran': vet, 
-            'real_id': real_id, 'dd_code': dcf, 'icn': icn_val, 'audit': audit_val,
-            'class': cl, 'rest': rs, 'end': ed
+            'sex': "1", 'address': addr, 'dah': "", 'city': city, 'zip': zip_c, 
+            'height': "072", 'weight': "175", 'eyes': "BLU", 'hair': "BRO", 
+            'race': "W", 'donor': False, 'veteran': False, 
+            'real_id': real_id, 'dd_code': "WDL0A...", 'icn': "123...", 'audit': "A02...",
+            'class': cl, 'rest': "NONE", 'end': "NONE"
         }
         
-        try:
-            raw_data = build_aamva_stream(inputs, opts)
-            L = len(raw_data)
-            l_col, r_col = st.columns([1, 1.2])
-            with l_col:
-                st.subheader("📊 条码预览")
-                codes = encode(raw_data, columns=sel_cols, security_level=5)
-                st.image(render_image(codes, scale=3))
-                st.info(f"字节数: {L} | {sel_cols} 列 x {len(codes)} 行")
-                with st.expander("十六进制 (Hex Dump)"): st.code(format_hex_dump(raw_data))
+        raw_data = build_aamva_stream(inputs, opts)
+        L = len(raw_data)
+        
+        # --- 核心 UI 逻辑：左侧条码与计算结果 ---
+        l_col, r_col = st.columns([1.2, 1.4])
+        
+        with l_col:
+            st.subheader("📊 条码预览")
+            codes = encode(raw_data, columns=sel_cols, security_level=5)
+            st.image(render_image(codes, scale=3))
+            
+            # --- 📐 PDF417 参数逆向计算模块 ---
+            st.markdown("---")
+            st.subheader("📐 PDF417 参数逆向计算 (AAMVA)")
+            st.markdown(f"**分析长度:** `{L} bytes`")
+            st.markdown(f"**ECC 安全等级:** `Level 5 (64 Codewords)`")
+            
+            df_params = reverse_pdf417_params(L)
+            # 获取 17 列推荐组合的行数
+            rec_row = df_params[df_params["列数 (Cols)"] == 17]["行数 (Rows)"].values[0]
+            st.info(f"💡 **AAMVA 推荐:** `Cols=17`, `Rows={rec_row}`")
+            
+            st.markdown("**推算行列组合结果 (数据表)**")
+            st.table(df_params)
 
-            with r_col:
-                st.subheader("🔍 AAMVA 解析核对")
-                raw_text = raw_data.decode('latin-1')
-                if "DL" in raw_text:
-                    content = raw_text.split("DL", 1)[1]
-                    parsed = []
-                    for line in content.split('\x0a'):
-                        clean_line = line.strip()
-                        if len(clean_line) >= 3:
-                            tag = clean_line[:3]
-                            if tag in AAMVA_TAGS_MAP:
-                                parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "内容": clean_line[3:]})
-                    st.table(pd.DataFrame(parsed))
-        except Exception as e:
-            st.error(f"失败: {e}")
+        with r_col:
+            st.subheader("🔍 AAMVA 字段自动解析")
+            raw_text = raw_data.decode('latin-1')
+            if "DL" in raw_text:
+                content = raw_text.split("DL", 1)[1]
+                parsed = []
+                for line in content.split('\x0a'):
+                    clean_line = line.strip()
+                    if len(clean_line) >= 3:
+                        tag = clean_line[:3]
+                        if tag in AAMVA_TAGS_MAP:
+                            parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "内容": clean_line[3:]})
+                st.table(pd.DataFrame(parsed))
+            with st.expander("查看十六进制数据 (Hex Dump)"): st.code(format_hex_dump(raw_data))
 
 if __name__ == "__main__":
     main()
