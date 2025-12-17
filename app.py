@@ -204,7 +204,13 @@ def main():
             if key == "sex":
                 phys_vals["sex"] = p_cols[i].selectbox(label, default, format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
             elif key == "race":
-                phys_vals["race"] = p_cols[i].selectbox(label, default, format_func=lambda x: RACE_OPTIONS[x])
+            # 增加 index=3，默认指向列表中的第4项（即 "W"）
+            phys_vals["race"] = p_cols[i].selectbox(
+                label, 
+                default, 
+                index=4, 
+                format_func=lambda x: RACE_OPTIONS[x]
+            )
             else:
                 phys_vals[key] = p_cols[i].text_input(label, default)
         
