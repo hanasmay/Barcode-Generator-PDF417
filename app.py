@@ -156,14 +156,14 @@ def main():
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
-        fn = n_cols[1].text_input("名字 (DAC)", "CORDOVA")
+        ln = n_cols[0].text_input("姓氏 (DCS)", "CORDOVA")
+        fn = n_cols[1].text_input("名字 (DAC)", "CHARLES")
         mn = n_cols[2].text_input("中间名 (DAD)", "NONE")
-        ln = n_cols[0].text_input("姓氏 (DCS)", "SOLOMON")
         
         a_cols = st.columns([2, 1, 1])
-        addr = a_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
-        city = a_cols[1].text_input("城市 (DAI)", "KENT")
-        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "98010")
+        addr = a_cols[0].text_input("街道地址 (DAG)", "3704 3RD PL NE")
+        city = a_cols[1].text_input("城市 (DAI)", "CENTER POINT")
+        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "352151400")
         
         dah_val = st.text_input("详细地址/第二行地址 (DAH)", "APT 101") if not h_dah else ""
 
@@ -176,13 +176,13 @@ def main():
         real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
         
         d_cols = st.columns(4)
-        dob = d_cols[0].text_input("生日 (MMDDYYYY)", "08081998")
-        iss = d_cols[1].text_input("签发日", "06062024")
-        exp = d_cols[2].text_input("过期日", "08082030")
-        rev = d_cols[3].text_input("修订日 (DDB)", "11122019")
+        dob = d_cols[0].text_input("生日 (MMDDYYYY)", "03/04/1969")
+        iss = d_cols[1].text_input("签发日", "11/05/2023")
+        exp = d_cols[2].text_input("过期日", "11/05/2027")
+        rev = d_cols[3].text_input("修订日 (DDB)", "04/26/2022")
         
         i_cols = st.columns(3)
-        dcf = i_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
+        dcf = i_cols[0].text_input("鉴别码 (DCF)", "NONE")
         rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
         ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
@@ -191,11 +191,11 @@ def main():
     with st.container(border=True):
         phys_items = [("sex", "性别 (DBC)", ["1", "2", "9", "0"])]
         if not h_race: phys_items.append(("race", "种族代码 (DCL)", list(RACE_OPTIONS.keys())))
-        if not h_h:    phys_items.append(("height", "身高", "072"))
-        if not h_w:    phys_items.append(("weight", "体重", "175"))
+        if not h_h:    phys_items.append(("height", "身高", "070"))
+        if not h_w:    phys_items.append(("weight", "体重", "181"))
         if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
         if not h_hair: phys_items.append(("hair", "发色", "BRO"))
-        if not h_icn:   phys_items.append(("icn", "ICN (DCK)", "123456789012345"))
+        if not h_icn:   phys_items.append(("icn", "ICN (DCK)", "66004729317182331201"))
         if not h_audit: phys_items.append(("audit", "审计码 (DCJ)", "A020424988483"))
         
         phys_vals = {}
