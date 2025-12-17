@@ -169,6 +169,8 @@ def main():
         c1, c2, c3 = st.columns([2, 1, 1])
         dl = c1.text_input("证件号 (DAQ)", "66004729")
         cl = c2.text_input("准驾等级 (DCA)", "D")
+        rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
+        ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
         real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
         
         d_cols = st.columns(4)
@@ -183,8 +185,6 @@ def main():
 
         i_cols = st.columns(3)
         dcf = i_cols[0].text_input("鉴别码 (DCF)", "NONE")
-        rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
-        ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
     # 3. 身体特征板块
     st.subheader("🏃 身体特征与代码")
