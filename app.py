@@ -137,4 +137,93 @@ def main():
         mn = st.text_input("中间名 (DAD)", "NONE").upper()
         st.markdown("---")
         dob = st.text_input("生日 (MMDDYYYY)", "08/08/1998")
-        iss = st.text_input("签发日", "06/06/2
+        iss = st.text_input("签发日", "06/06/2024")
+        exp = st.text_input("过期日", "08/08/2030")
+        rev = st.text_input("修订日", "11/12/2019")
+
+    with c2:
+        st.subheader("📝 证件类型与代码")
+        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B").upper()
+        real_id = st.toggle("符合 REAL ID 标准 (DDA)", True)
+        dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483").upper()
+        icn = st.text_input("ICN (DCH)", "123456789012345").upper() if not opts['hide_icn'] else "0000000000"
+        cls_val = st.text_input("类型 (CLASS - DCA)", "D").upper()
+        rest_val = st.text_input("限制 (REST - DCB)", "NONE").upper()
+        end_val = st.text_input("背书 (END - DCD)", "NONE").upper()
+        audit_val = st.text_input("审计码 (DCJ)", "A020424988483").upper() if not opts['hide_audit'] else ""
+
+    st.markdown("---")
+    st.subheader("🏠 地址与物理特征")
+    addr_row = st.columns(4)
+    addr = addr_row[0].text_input("街道 (DAG)", "29810 224TH AVE SE").upper()
+    city = addr_row[1].text_input("城市 (DAI)", "KENT").upper()
+    zip_c = addr_row[2].text_input("邮编 (DAK)", "98010")
+    
+    # 更新后的性别选择逻辑
+    sex = addr_row[3].selectbox(
+        "性别 (DBC)", 
+        ["1", "2", "9", "0"], 
+        format_func=lambda x: {
+            "1": "男 (1)", 
+            "2": "女 (2)", 
+            "9": "其他 (9)", 
+            "0": "未知 (0)"
+        }[x]
+    )
+
+    # 动态物理特征行
+    phys_c = st.columns(5)
+    active_idx = 0
+    h_v, w_v, e_v, hr_v, r_v = "072", "175", "BLU", "BRO", "W"
+    
+    if not opts['hide_height']: h_v = phys_c[active_idx % 5].text_input("身高", h_v); active_idx += 1
+    if not opts['hide_weight']: w_v = phys_c[active_idx % 5].text_input("体重", w_v); active_idx += 1
+    if not opts['hide_eyes']:   e_v = phys_c[active_idx % 5].text_input("眼色", e_v).upper(); active_idx += 1
+    if not opts['hide_hair']:   hr_v = phys_c[active_idx % 5].text_input("发色", hr_v).upper(); active_idx += 1
+    if not opts['hide_race']:   r_v = phys_c[active_idx % 5].text_input("种族 (DCL)", r_v).upper(); active_idx += 1
+    
+    st.markdown("##### 特殊标识 (选中后才会被写入条码)")
+    sb1, sb2 = st.columns(2)
+    donor_v = sb1.toggle("器官捐献者 (DDK)", False)
+    vet_v = sb2.toggle("退伍军人 (DDI)", False)
+
+    if st.button("🚀 执行 AAMVA 全面分析", type="primary", use_container_width=True):
+        inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'race':r_v,'donor':donor_v,'veteran':vet_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
+        
+        try:
+            raw_data = build_aamva_stream(inputs, opts)
+            L = len(raw_data)
+            raw_text = raw_data.decode('latin-1')
+            
+            col_left, col_right = st.columns([1, 1.2])
+            with col_left:
+                st.subheader("📊 条码预览")
+                codes = encode(raw_data, columns=sel_cols, security_level=5)
+                st.image(render_image(codes, scale=3))
+                st.success(f"**物理参数:** {sel_cols} 列 × {len(codes)} 行 | **数据长度:** `{L} bytes`")
+                st.subheader("📐 参数逆向推算")
+                st.dataframe(reverse_pdf417_params(L), use_container_width=True, hide_index=True)
+                with st.expander("十六进制 (Hex Dump)"): st.code(format_hex_dump(raw_data), language="text")
+
+            with col_right:
+                st.subheader("🔍 详细字段解析")
+                if "DL" in raw_text:
+                    content_after_dl = raw_text.split("DL", 1)[1]
+                    match = re.search(r'[A-Z]{3}', content_after_dl)
+                    if match:
+                        business_data = content_after_dl[match.start():]
+                        parsed = []
+                        for line in business_data.split('\x0a'):
+                            if len(line) >= 3:
+                                tag = line[:3]
+                                if tag in AAMVA_TAGS_MAP:
+                                    parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "值": line[3:].strip()})
+                        st.table(pd.DataFrame(parsed))
+                
+                with st.expander("查看原始明文流"): st.text(raw_text)
+
+        except Exception as e:
+            st.error(f"生成失败: {e}")
+
+if __name__ == "__main__":
+    main()
