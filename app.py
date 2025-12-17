@@ -71,11 +71,11 @@ def build_aamva_stream(inputs, options):
     body = [
         f"DAQ{inputs['dl_number'].upper()}\x0a", 
         f"DCS{inputs['last_name'].upper()}\x0a",
-        f"DDEN\x0a", # 新增空标识符
+        f"DDEN\x0a",
         f"DAC{inputs['first_name'].upper()}\x0a", 
-        f"DDFN\x0a", # 新增空标识符
+        f"DDFN\x0a",
         f"DAD{inputs['middle_name'].upper()}\x0a",
-        f"DDGN\x0a", # 新增空标识符
+        f"DDGN\x0a",
         f"DCA{inputs['class'].upper()}\x0a",
         f"DCB{inputs['rest'].upper()}\x0a",
         f"DCD{inputs['end'].upper()}\x0a",
@@ -121,24 +121,35 @@ def main():
         st.header("⚙️ 配置面板")
         state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
         st.markdown("---")
+        
+        # 字段隐藏逻辑分组
+        st.subheader("🙈 物理特征隐藏")
+        hide_h = st.checkbox("隐藏身高 (DAU)")
+        hide_w = st.checkbox("隐藏体重 (DAW)")
+        hide_e = st.checkbox("隐藏眼色 (DAY)")
+        hide_hair = st.checkbox("隐藏发色 (DAZ)")
+        
+        st.markdown("---")
+        st.subheader("📋 证件字段隐藏")
+        hide_icn = st.checkbox("隐藏 ICN (DCH)", False)
+        hide_a = st.checkbox("隐藏审计码 (DCJ)", True)
+        hide_race = st.checkbox("隐藏种族 (DCL)", True) # 移动到审计码下方
+        
         opts = {
-            'hide_height': st.checkbox("隐藏身高"), 
-            'hide_weight': st.checkbox("隐藏体重"),
-            'hide_eyes': st.checkbox("隐藏眼色"), 
-            'hide_hair': st.checkbox("隐藏发色"),
-            'hide_race': st.checkbox("隐藏种族 (DCL)", True), # 默认隐藏
-            'hide_icn': st.checkbox("隐藏 ICN (DCH)", False),
-            'hide_audit': st.checkbox("隐藏审计码 (DCJ)", True)
+            'hide_height': hide_h, 'hide_weight': hide_w,
+            'hide_eyes': hide_e, 'hide_hair': hide_hair,
+            'hide_icn': hide_icn, 'hide_audit': hide_a, 'hide_race': hide_race
         }
+        
         st.markdown("---")
         sel_cols = st.slider("列数设置 (Columns)", 9, 20, 15)
 
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("👤 个人姓名与日期")
-        ln = st.text_input("姓 (DCS)", "SOLOMON").upper()
-        fn = st.text_input("名 (DAC)", "DANIEL").upper()
-        mn = st.text_input("中间名 (DAD)", "NONE").upper()
+        ln = st.text_input("姓 (Last Name - DCS)", "SOLOMON").upper()
+        fn = st.text_input("名 (First Name - DAC)", "DANIEL").upper()
+        mn = st.text_input("中间名 (Middle Name - DAD)", "NONE").upper()
         st.markdown("---")
         dob = st.text_input("生日 (MMDDYYYY)", "08/08/1998")
         iss = st.text_input("签发日", "06/06/2024")
@@ -167,15 +178,13 @@ def main():
     st.markdown("---")
     st.subheader("🏠 地址与物理特征")
     
-    # 第一排
     addr_row = st.columns(4)
     addr = addr_row[0].text_input("街道 (DAG)", "29810 224TH AVE SE").upper()
     city = addr_row[1].text_input("城市 (DAI)", "KENT").upper()
     zip_c = addr_row[2].text_input("邮编 (DAK)", "98010")
     sex = addr_row[3].selectbox("性别 (DBC)", ["1", "2"], format_func=lambda x: "男 (1)" if x=="1" else "女 (2)")
 
-    # 第二排
-    phys_row = st.columns(5) # 增加一列给 Race
+    phys_row = st.columns(5)
     active_idx = 0
     h_v, w_v, e_v, hr_v, r_v = "072", "175", "BLU", "BRO", "W"
     
@@ -190,7 +199,6 @@ def main():
     if not opts['hide_race']:
         r_v = phys_row[active_idx].text_input("种族 (DCL)", r_v).upper()
 
-    # --- 执行逻辑 ---
     if st.button("🚀 执行 AAMVA 全面分析", type="primary", use_container_width=True):
         inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'icn':icn,'class':cls_val,'rest':rest_val,'end':end_val,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'race':r_v,'real_id':real_id,'dd_code':dcf,'audit':audit_val}
         
