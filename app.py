@@ -52,7 +52,6 @@ def clean_date(date_str):
     return re.sub(r'[^0-9]', '', date_str)
 
 def format_hex_inspector(raw_bytes):
-    """十六进制数据查看器逻辑"""
     lines = []
     for i in range(0, len(raw_bytes), 16):
         chunk = raw_bytes[i:i+16]
@@ -126,13 +125,13 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. 主界面布局 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 字段专家", layout="wide")
+    st.set_page_config(page_title="AAMVA 专家版", layout="wide")
     
     # --- 侧边栏 ---
     with st.sidebar:
-        st.header("⚙️ 侧边栏配置")
+        st.header("⚙️ 字段隐藏与规格")
         target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
-        sel_cols = st.slider("预览列数", 9, 20, 17)
+        sel_cols = st.slider("条码列数", 9, 20, 17)
         st.markdown("---")
         h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
         h_h = st.checkbox("隐藏身高 (DAU)", False)
@@ -145,7 +144,7 @@ def main():
         opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
                 'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    # --- 第一板块：姓名与居住 ---
+    # 板块1：个人姓名与居住
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
@@ -155,16 +154,16 @@ def main():
         a_cols = st.columns([2, 1, 1])
         addr = a_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
         city = a_cols[1].text_input("城市 (DAI)", "KENT")
-        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "98010")
+        zip_c = a_cols[2].text_input("邮编 (DAK)", "98010")
         dah_val = st.text_input("详细地址/第二行地址 (DAH)", "APT 101") if not h_dah else ""
 
-    # --- 第二板块：证件核心 ---
+    # 板块2：证件核心
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
         dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
         cl = c2.text_input("类型 (DCA)", "D")
-        real_id = c3.toggle("REAL ID (DDA)", True)
+        real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
         d_cols = st.columns(4)
         dob = d_cols[0].text_input("生日 (MMDDYYYY)", "08081998")
         iss = d_cols[1].text_input("签发日", "06062024")
@@ -172,11 +171,11 @@ def main():
         rev = d_cols[3].text_input("修订日 (DDB)", "11122019")
         i_cols = st.columns(3)
         dcf = i_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
-        rs = i_cols[1].text_input("限制码 (DCB)", "NONE")
-        ed = i_cols[2].text_input("背书码 (DCD)", "NONE")
+        rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
+        ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
-    # --- 第三板块：物理特征 ---
-    st.subheader("🏃 身体特征与特殊标识")
+    # 板块3：身体特征
+    st.subheader("🏃 身体特征与代码")
     with st.container(border=True):
         phys_items = [("sex", "性别 (DBC)", ["1", "2", "9", "0"])]
         if not h_race: phys_items.append(("race", "种族代码 (DCL)", list(RACE_OPTIONS.keys())))
@@ -201,8 +200,8 @@ def main():
         vet = b_cols[0].toggle("退伍军人标识 (DDL)", False)
         don = b_cols[1].toggle("器官捐献标识 (DDK)", False)
 
-    # --- 第四板块：执行生成与结果展示 ---
-    if st.button("🚀 生成条码并执行全面深度分析", type="primary", use_container_width=True):
+    # 生成与深度展示
+    if st.button("🚀 生成并执行全面深度分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
@@ -224,15 +223,13 @@ def main():
                 st.image(render_image(codes, scale=3))
                 
                 st.markdown("---")
-                st.subheader("📐 PDF417 参数逆向计算 (AAMVA)")
-                st.info(f"**数据长度:** `{L} bytes` | **纠错:** `Level 5`")
+                st.subheader("📐 PDF417 参数逆向计算")
+                st.info(f"**分析长度:** `{L} bytes` | **纠错:** `Level 5`")
                 st.table(reverse_pdf417_params(L))
                 
                 st.markdown("---")
-                st.subheader("🛠️ 底层十六进制数据 (HEX Data)")
+                st.subheader("🛠️ 底层十六进制查看器 (Offset View)")
                 st.code(format_hex_inspector(raw_data), language="text")
-                with st.expander("复制原始 HEX 字符串"):
-                    st.text(raw_data.hex().upper())
 
             with r_col:
                 st.subheader("🔍 AAMVA 字段逻辑解析")
@@ -247,9 +244,18 @@ def main():
                             if tag in AAMVA_TAGS_MAP:
                                 parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "内容": clean_line[3:]})
                     st.table(pd.DataFrame(parsed))
+                
+                # --- 挪动后的 HEX 复制块 ---
+                st.markdown("---")
+                st.subheader("📋 原始 HEX 数据 (用于复制)")
+                st.info("此数据可直接粘贴至 HEX 编辑器或外部生成器。")
+                st.code(raw_data.hex().upper(), language="text")
+                
+                with st.expander("查看原始明文流 (Raw Text Stream)"):
+                    st.text(raw_text)
 
         except Exception as e:
-            st.error(f"失败: {e}")
+            st.error(f"分析失败: {e}")
 
 if __name__ == "__main__":
     main()
