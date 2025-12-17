@@ -78,7 +78,6 @@ def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
-    # 按照 AAMVA 标准子文件内字段物理顺序
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -86,19 +85,14 @@ def build_aamva_stream(inputs, options):
     body.append(f"DDFN\x0a")
     body.append(f"DAD{inputs['middle_name'].upper()}\x0a")
     body.append(f"DDGN\x0a")
-    body.append(f"DCA{inputs['class'].upper()}\x0a")
-    body.append(f"DCB{inputs['rest'].upper()}\x0a")
-    body.append(f"DCD{inputs['end'].upper()}\x0a")
+    
     body.append(f"DBD{clean_date(inputs['iss_date'])}\x0a")
     body.append(f"DBB{clean_date(inputs['dob'])}\x0a")
     body.append(f"DBA{clean_date(inputs['exp_date'])}\x0a")
     body.append(f"DBC{inputs['sex']}\x0a")
     
-    if not options['hide_height']: body.append(f"DAU{inputs['height']} IN\x0a")
-    if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
-    
     body.append(f"DAG{inputs['address'].upper()}\x0a")
-    if not options['hide_dah']:   body.append(f"DAH{inputs['dah'].upper()}\x0a")
+    if not options['hide_dah']: body.append(f"DAH{inputs['dah'].upper()}\x0a")
     body.append(f"DAI{inputs['city'].upper()}\x0a")
     body.append(f"DAJ{inputs['state'].upper()}\x0a")
     
@@ -108,18 +102,20 @@ def build_aamva_stream(inputs, options):
     
     body.append(f"DCF{inputs['dd_code'].upper()}\x0a")
     body.append(f"DCGUSA\x0a")
+    if not options['hide_icn']: body.append(f"DCK{inputs['icn'].upper()}\x0a")
+    body.append(f"DCA{inputs['class'].upper()}\x0a")
+    if not options['hide_audit']: body.append(f"DCJ{inputs['audit'].upper()}\x0a")
     
+    if not options['hide_height']: body.append(f"DAU{inputs['height']} IN\x0a")
+    if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
     if not options['hide_weight']: body.append(f"DAW{inputs['weight']}\x0a")
     if not options['hide_hair']:   body.append(f"DAZ{inputs['hair'].upper()}\x0a")
     if not options['hide_race']:   body.append(f"DCL{inputs['race'].upper()}\x0a")
     
-    if not options['hide_icn']:    body.append(f"DCK{inputs['icn'].upper()}\x0a")
+    body.append(f"DCB{inputs['rest'].upper()}\x0a")
+    body.append(f"DCD{inputs['end'].upper()}\x0a")
     body.append(f"DDA{'F' if inputs['real_id'] else 'N'}\x0a")
     body.append(f"DDB{clean_date(inputs['rev_date'])}\x0a")
-    
-    if inputs['veteran']: body.append(f"DDL1\x0a")
-    if inputs['donor']:   body.append(f"DDK1\x0a")
-    if not options['hide_audit']: body.append(f"DCJ{inputs['audit'].upper()}\x0a")
     
     sub_data = "DL" + "".join(body)
     subfile_bytes = sub_data.encode('latin-1')
@@ -130,7 +126,7 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. 主界面布局 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
+    st.set_page_config(page_title="AAMVA 字段专家", layout="wide")
     
     with st.sidebar:
         st.header("⚙️ 侧边栏配置")
@@ -143,16 +139,15 @@ def main():
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
         h_hair = st.checkbox("隐藏发色 (DAZ)", False)
         h_icn = st.checkbox("隐藏 ICN (DCK)", False)
-        h_audit = st.checkbox("隐藏审计码 (DCJ)", True)
+        h_audit = st.checkbox("隐藏审计码 (DCJ)", False)
         h_race = st.checkbox("隐藏种族 (DCL)", True)
-        opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
-                'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
+        opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 
+                'hide_eyes': h_e, 'hide_hair': h_hair, 'hide_race': h_race, 
+                'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    # 1. 姓名与居住板块
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
-        # --- 修正姓名排列顺序：名 -> 中 -> 姓 ---
         fn = n_cols[0].text_input("名字 (DAC)", "CHARLES")
         mn = n_cols[1].text_input("中间名 (DAD)", "NONE")
         ln = n_cols[2].text_input("姓氏 (DCS)", "CORDOVA")
@@ -163,30 +158,30 @@ def main():
         zip_c = a_cols[2].text_input("邮政编码 (DAK)", "35215")
         dah_val = st.text_input("详细地址 (DAH)", "APT 101") if not h_dah else ""
 
-    # 2. 证件信息板块
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
-        c1, c2, c3 = st.columns([2, 1, 1])
+        c1, c2 = st.columns([2, 1])
         dl = c1.text_input("证件号 (DAQ)", "66004729")
-        cl = c2.text_input("准驾等级 (DCA)", "D")
-        real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
+        rev = c2.text_input("修订日 (DDB)", "04/26/2022")
         
-        d_cols = st.columns(4)
+        # --- 修正点 1：日期顺序 (生日 -> 过期日 -> 签发日) ---
+        d_cols = st.columns(3)
         dob = d_cols[0].text_input("生日 (MMDDYYYY)", "03/04/1969")
-        iss = d_cols[1].text_input("签发日", "11/05/2023")
-        exp = d_cols[2].text_input("过期日", "11/05/2027")
-        rev = d_cols[3].text_input("修订日 (DDB)", "04/26/2022")
+        exp = d_cols[1].text_input("过期日", "11/05/2027")
+        iss = d_cols[2].text_input("签发日", "11/05/2023")
         
-        admin_cols = st.columns(2)
-        icn_input = admin_cols[0].text_input("ICN (DCK)", "66004729317182331201") if not h_icn else ""
-        audit_input = admin_cols[1].text_input("审计码 (DCJ)", "A020424988483") if not h_audit else ""
+        admin_cols = st.columns([2, 3, 1, 2])
+        dcf = admin_cols[0].text_input("鉴别码 (DCF)", "NONE")
+        icn_input = admin_cols[1].text_input("ICN (DCK)", "66004729317182331201") if not h_icn else ""
+        cl = admin_cols[2].text_input("等级 (DCA)", "D")
+        audit_input = admin_cols[3].text_input("审计码 (DCJ)", "A020424988483") if not h_audit else ""
 
-        i_cols = st.columns(3)
-        dcf = i_cols[0].text_input("鉴别码 (DCF)", "NONE")
+        # --- 修正点 2：标识与代码顺序 (Real ID -> 限制 -> 背书) ---
+        i_cols = st.columns([1, 1, 1])
+        real_id = i_cols[0].toggle("符合 REAL ID 标准 (DDA)", True)
         rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
         ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
-    # 3. 身体特征板块
     st.subheader("🏃 身体特征与代码")
     with st.container(border=True):
         phys_items = [("sex", "性别 (DBC)", ["1", "2", "9", "0"])]
@@ -206,13 +201,8 @@ def main():
                 phys_vals["race"] = p_cols[i].selectbox(label, default, index=0, format_func=lambda x: RACE_OPTIONS[x])
             else:
                 phys_vals[key] = p_cols[i].text_input(label, default)
-        
-        st.markdown("---")
-        b_cols = st.columns(2)
-        vet = b_cols[0].toggle("退伍军人标识 (DDL)", False)
-        don = b_cols[1].toggle("器官捐献标识 (DDK)", False)
 
-    if st.button("🚀 生成并执行全面深度分析", type="primary", use_container_width=True):
+    if st.button("🚀 执行全面深度分析并生成条码", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
@@ -220,15 +210,13 @@ def main():
             'height': phys_vals.get("height", "070"), 'weight': phys_vals.get("weight", "181"), 
             'eyes': phys_vals.get("eyes", "BLU"), 'hair': phys_vals.get("hair", "BRO"), 
             'race': phys_vals.get("race", "W"), 'icn': icn_input, 'audit': audit_input,
-            'donor': don, 'veteran': vet, 'real_id': real_id, 'dd_code': dcf, 
-            'class': cl, 'rest': rs, 'end': ed
+            'real_id': real_id, 'dd_code': dcf, 'class': cl, 'rest': rs, 'end': ed
         }
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
             L = len(raw_data)
             l_col, r_col = st.columns([1.3, 1.4])
-            
             with l_col:
                 st.subheader("📊 PDF417 条码预览")
                 codes = encode(raw_data, columns=sel_cols, security_level=5)
@@ -257,7 +245,7 @@ def main():
                 st.subheader("📋 原始 HEX 字符串")
                 st.code(raw_data.hex().upper(), language="text")
         except Exception as e:
-            st.error(f"失败: {e}")
+            st.error(f"分析失败: {e}")
 
 if __name__ == "__main__":
     main()
