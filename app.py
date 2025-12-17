@@ -99,8 +99,16 @@ def build_aamva_stream(inputs, options):
     body.append(f"DAG{inputs['address'].upper()}\x0a")
     if not options['hide_dah']:   body.append(f"DAH{inputs['dah'].upper()}\x0a")
     body.append(f"DAI{inputs['city'].upper()}\x0a")
-    body.append(f"DAJ \x0a")
-    body.append(f"DAK{clean_date(inputs['zip'])}  \x0a")
+    body.append(f"DAJ{inputs['state'].upper()}\x0a")
+    
+    # --- 邮编自动补齐逻辑 ---
+    zip_raw = re.sub(r'[^0-9]', '', inputs['zip'])
+    if len(zip_raw) == 5:
+        zip_final = zip_raw + "0000"
+    else:
+        zip_final = zip_raw
+    body.append(f"DAK{zip_final}  \x0a")
+    
     body.append(f"DCF{inputs['dd_code'].upper()}\x0a")
     body.append(f"DCGUSA\x0a")
     
@@ -125,13 +133,12 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. 主界面布局 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 专家版", layout="wide")
+    st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
     
-    # --- 侧边栏 ---
     with st.sidebar:
-        st.header("⚙️ 字段隐藏与规格")
+        st.header("⚙️ 侧边栏配置")
         target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
-        sel_cols = st.slider("条码列数", 9, 20, 17)
+        sel_cols = st.slider("预览列数", 9, 20, 17)
         st.markdown("---")
         h_dah = st.checkbox("隐藏详细地址 (DAH)", True)
         h_h = st.checkbox("隐藏身高 (DAU)", False)
@@ -144,37 +151,41 @@ def main():
         opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
                 'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    # 板块1：个人姓名与居住
+    # 姓名居住板块
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
         ln = n_cols[0].text_input("姓氏 (DCS)", "SOLOMON")
         fn = n_cols[1].text_input("名字 (DAC)", "DANIEL")
         mn = n_cols[2].text_input("中间名 (DAD)", "NONE")
+        
         a_cols = st.columns([2, 1, 1])
         addr = a_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
         city = a_cols[1].text_input("城市 (DAI)", "KENT")
-        zip_c = a_cols[2].text_input("邮编 (DAK)", "98010")
+        zip_c = a_cols[2].text_input("邮政编码 (DAK)", "98010")
+        
         dah_val = st.text_input("详细地址/第二行地址 (DAH)", "APT 101") if not h_dah else ""
 
-    # 板块2：证件核心
+    # 证件信息板块
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
         dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
         cl = c2.text_input("类型 (DCA)", "D")
         real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
+        
         d_cols = st.columns(4)
         dob = d_cols[0].text_input("生日 (MMDDYYYY)", "08081998")
         iss = d_cols[1].text_input("签发日", "06062024")
         exp = d_cols[2].text_input("过期日", "08082030")
         rev = d_cols[3].text_input("修订日 (DDB)", "11122019")
+        
         i_cols = st.columns(3)
         dcf = i_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
         rs = i_cols[1].text_input("限制代码 (DCB)", "NONE")
         ed = i_cols[2].text_input("背书代码 (DCD)", "NONE")
 
-    # 板块3：身体特征
+    # 物理特征板块
     st.subheader("🏃 身体特征与代码")
     with st.container(border=True):
         phys_items = [("sex", "性别 (DBC)", ["1", "2", "9", "0"])]
@@ -185,6 +196,7 @@ def main():
         if not h_hair: phys_items.append(("hair", "发色", "BRO"))
         if not h_icn:   phys_items.append(("icn", "ICN (DCH)", "123456789012345"))
         if not h_audit: phys_items.append(("audit", "审计码 (DCJ)", "A020424988483"))
+        
         phys_vals = {}
         p_cols = st.columns(len(phys_items) if phys_items else 1)
         for i, item in enumerate(phys_items):
@@ -195,12 +207,13 @@ def main():
                 phys_vals["race"] = p_cols[i].selectbox(label, default, format_func=lambda x: RACE_OPTIONS[x])
             else:
                 phys_vals[key] = p_cols[i].text_input(label, default)
+        
         st.markdown("---")
         b_cols = st.columns(2)
         vet = b_cols[0].toggle("退伍军人标识 (DDL)", False)
         don = b_cols[1].toggle("器官捐献标识 (DDK)", False)
 
-    # 生成与深度展示
+    # 生成逻辑
     if st.button("🚀 生成并执行全面深度分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
@@ -209,30 +222,27 @@ def main():
             'height': phys_vals.get("height", "072"), 'weight': phys_vals.get("weight", "175"), 
             'eyes': phys_vals.get("eyes", "BLU"), 'hair': phys_vals.get("hair", "BRO"), 
             'race': phys_vals.get("race", "W"), 'icn': phys_vals.get("icn", ""), 'audit': phys_vals.get("audit", ""),
-            'donor': don, 'veteran': vet, 'real_id': real_id, 'dd_code': dcf, 'class': cl, 'rest': rs, 'end': ed
+            'donor': don, 'veteran': vet, 'real_id': real_id, 'dd_code': dcf, 
+            'class': cl, 'rest': rs, 'end': ed
         }
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
             L = len(raw_data)
             l_col, r_col = st.columns([1.3, 1.4])
-            
             with l_col:
                 st.subheader("📊 PDF417 条码预览")
                 codes = encode(raw_data, columns=sel_cols, security_level=5)
                 st.image(render_image(codes, scale=3))
-                
                 st.markdown("---")
                 st.subheader("📐 PDF417 参数逆向计算")
-                st.info(f"**分析长度:** `{L} bytes` | **纠错:** `Level 5`")
                 st.table(reverse_pdf417_params(L))
-                
                 st.markdown("---")
-                st.subheader("🛠️ 底层十六进制查看器 (Offset View)")
+                st.subheader("🛠️ 底层 HEX 查看器")
                 st.code(format_hex_inspector(raw_data), language="text")
 
             with r_col:
-                st.subheader("🔍 AAMVA 字段逻辑解析")
+                st.subheader("🔍 AAMVA 解析核对")
                 raw_text = raw_data.decode('latin-1')
                 if "DL" in raw_text:
                     content = raw_text.split("DL", 1)[1]
@@ -244,18 +254,11 @@ def main():
                             if tag in AAMVA_TAGS_MAP:
                                 parsed.append({"标签": tag, "描述": AAMVA_TAGS_MAP[tag], "内容": clean_line[3:]})
                     st.table(pd.DataFrame(parsed))
-                
-                # --- 挪动后的 HEX 复制块 ---
                 st.markdown("---")
-                st.subheader("📋 原始 HEX 数据 (用于复制)")
-                st.info("此数据可直接粘贴至 HEX 编辑器或外部生成器。")
+                st.subheader("📋 原始 HEX 字符串")
                 st.code(raw_data.hex().upper(), language="text")
-                
-                with st.expander("查看原始明文流 (Raw Text Stream)"):
-                    st.text(raw_text)
-
         except Exception as e:
-            st.error(f"分析失败: {e}")
+            st.error(f"失败: {e}")
 
 if __name__ == "__main__":
     main()
