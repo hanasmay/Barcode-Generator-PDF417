@@ -30,10 +30,10 @@ AAMVA_TAGS_MAP = {
     "DAQ": "证件号码", "DCS": "姓", "DAC": "名", "DAD": "中间名",
     "DBB": "出生日期", "DBD": "签发日期", "DBA": "过期日期", "DBC": "性别",
     "DAU": "身高", "DAW": "体重", "DAY": "眼睛颜色", "DAZ": "头发颜色",
-    "DAG": "街道地址", "DAI": "城市", "DAJ": "州代码", "DAK": "邮政编码",
-    "DCF": "鉴别码", "DDA": "REAL ID 状态", "DCJ": "审计码", "DDB": "修订日期",
-    "DCA": "类型", "DCB": "限制", "DCD": "背书", "DCK": "ICN", "DCL": "种族",
-    "DDK": "器官捐献标识", "DDL": "退伍军人标识", "DDEN": "名(空)", "DDFN": "姓(空)", "DDGN": "名(空)"
+    "DAG": "街道地址", "DAH": "详细地址(Line 2)", "DAI": "城市", "DAJ": "州代码", 
+    "DAK": "邮政编码", "DCF": "鉴别码", "DDA": "REAL ID 状态", "DCJ": "审计码", 
+    "DDB": "修订日期", "DCA": "类型", "DCB": "限制", "DCD": "背书", 
+    "DCK": "ICN", "DCL": "种族", "DDK": "器官捐献标识", "DDL": "退伍军人标识"
 }
 
 # ==================== 3. 核心工具 ====================
@@ -50,21 +50,11 @@ def format_hex_dump(raw_bytes):
         lines.append(f"{hex_part} | {ascii_part}")
     return "\n".join(lines)
 
-def reverse_pdf417_params(data_len, ecc_level=5):
-    ecc_map = {0:2, 1:4, 2:8, 3:16, 4:32, 5:64, 6:128, 7:256, 8:512}
-    total_codewords = math.ceil(data_len / 1.85) + ecc_map.get(ecc_level, 64) + 1
-    results = []
-    for cols in range(9, 21):
-        rows = math.ceil(total_codewords / cols)
-        if 3 <= rows <= 90:
-            results.append({"列数": cols, "行数": rows, "总码词": total_codewords})
-    return pd.DataFrame(results)
-
 def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
     body = []
     
-    # 基础顺序字段
+    # 按照要求的严格顺序
     body.append(f"DAQ{inputs['dl_number'].upper()}\x0a")
     body.append(f"DCS{inputs['last_name'].upper()}\x0a")
     body.append(f"DDEN\x0a")
@@ -75,21 +65,21 @@ def build_aamva_stream(inputs, options):
     body.append(f"DCA{inputs['class'].upper()}\x0a")
     body.append(f"DCB{inputs['rest'].upper()}\x0a")
     body.append(f"DCD{inputs['end'].upper()}\x0a")
-    
-    # 日期字段
     body.append(f"DBD{clean_date(inputs['iss_date'])}\x0a")
     body.append(f"DBB{clean_date(inputs['dob'])}\x0a")
     body.append(f"DBA{clean_date(inputs['exp_date'])}\x0a")
     body.append(f"DBC{inputs['sex']}\x0a")
     
-    # 受控物理特征
     if not options['hide_height']: body.append(f"DAU{inputs['height']} IN\x0a")
     if not options['hide_eyes']:   body.append(f"DAY{inputs['eyes'].upper()}\x0a")
     
+    # 地址部分
     body.append(f"DAG{inputs['address'].upper()}\x0a")
+    if not options['hide_dah']:   body.append(f"DAH{inputs['dah'].upper()}\x0a")
     body.append(f"DAI{inputs['city'].upper()}\x0a")
     body.append(f"DAJ \x0a")
     body.append(f"DAK{clean_date(inputs['zip'])}  \x0a")
+    
     body.append(f"DCF{inputs['dd_code'].upper()}\x0a")
     body.append(f"DCGUSA\x0a")
     
@@ -114,11 +104,11 @@ def build_aamva_stream(inputs, options):
 # ==================== 4. 主界面 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA 字段专家", layout="wide")
-    st.markdown("<h3 style='text-align: center;'>📐 AAMVA 字段解析与隐藏动态补位版</h3>", unsafe_allow_html=True)
-
+    st.set_page_config(page_title="AAMVA 专家生成器", layout="wide")
+    
     with st.sidebar:
-        st.header("⚙️ 字段隐藏配置")
+        st.header("⚙️ 隐藏选项")
+        h_dah = st.checkbox("隐藏详细地址 (DAH)", True) # 默认隐藏
         h_h = st.checkbox("隐藏身高 (DAU)", False)
         h_w = st.checkbox("隐藏体重 (DAW)", False)
         h_e = st.checkbox("隐藏眼色 (DAY)", False)
@@ -129,85 +119,78 @@ def main():
         
         target_state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
         sel_cols = st.slider("预览列数", 9, 20, 15)
-        opts = {'hide_height':h_h, 'hide_weight':h_w, 'hide_eyes':h_e, 'hide_hair':h_hair, 
-                'hide_race':h_race, 'hide_icn':h_icn, 'hide_audit':h_audit}
+        opts = {'hide_dah': h_dah, 'hide_height': h_h, 'hide_weight': h_w, 'hide_eyes': h_e, 
+                'hide_hair': h_hair, 'hide_race': h_race, 'hide_icn': h_icn, 'hide_audit': h_audit}
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.subheader("👤 个人姓名信息")
-        ln = st.text_input("姓 (DCS)", "SOLOMON")
-        fn = st.text_input("名 (DAC)", "DANIEL")
-        mn = st.text_input("中 (DAD)", "NONE")
+    # --- 第一板块：姓名与居住信息 ---
+    st.subheader("👤 个人姓名与居住信息")
+    with st.container(border=True):
+        r1_cols = st.columns(4)
+        ln = r1_cols[0].text_input("姓 (DCS)", "SOLOMON")
+        fn = r1_cols[1].text_input("名 (DAC)", "DANIEL")
+        mn = r1_cols[2].text_input("中 (DAD)", "NONE")
+        sex = r1_cols[3].selectbox("性别 (DBC)", ["1", "2", "9", "0"], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
         
-    with c2:
-        st.subheader("📝 证件信息")
-        # 证件核心号
-        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
+        r2_cols = st.columns([2, 1, 1])
+        addr = r2_cols[0].text_input("街道 (DAG)", "29810 224TH AVE SE")
+        city = r2_cols[1].text_input("城市 (DAI)", "KENT")
+        zip_c = r2_cols[2].text_input("邮编 (DAK)", "98010")
         
-        # 动态补位区域：日期组
-        date_cols = st.columns(2)
+        if not h_dah:
+            dah_val = st.text_input("详细地址/第二行 (DAH)", "UNIT 101")
+        else:
+            dah_val = ""
+
+    # --- 第二板块：证件信息 ---
+    st.subheader("📝 证件信息")
+    with st.container(border=True):
+        c1, c2, c3 = st.columns([2, 1, 1])
+        dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
+        cl = c2.text_input("类型 (DCA)", "D")
+        real_id = c3.toggle("REAL ID (DDA)", True)
+        
+        date_cols = st.columns(4)
         dob = date_cols[0].text_input("生日 (DBB)", "08081998")
         iss = date_cols[1].text_input("签发日 (DBD)", "06062024")
-        exp = date_cols[0].text_input("过期日 (DBA)", "08082030")
-        rev = date_cols[1].text_input("修订日 (DDB)", "11122019")
+        exp = date_cols[2].text_input("过期日 (DBA)", "08082030")
+        rev = date_cols[3].text_input("修订日 (DDB)", "11122019")
         
-        # 证件控制码
-        ctrl_cols = st.columns(2)
-        real_id = ctrl_cols[0].toggle("REAL ID (DDA)", True)
-        dcf = ctrl_cols[1].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
+        info_cols = st.columns(3)
+        dcf = info_cols[0].text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
+        rs = info_cols[1].text_input("限制 (DCB)", "NONE")
+        ed = info_cols[2].text_input("背书 (DCD)", "NONE")
         
-        # 隐藏动态补位
-        active_ctrls = []
-        if not h_icn: active_ctrls.append(("icn", "ICN (DCK)", "123456789012345"))
-        if not h_audit: active_ctrls.append(("audit", "审计码 (DCJ)", "A020424988483"))
+        # 动态显示 ICN 和 审计码
+        extra_cols = st.columns(2)
+        icn_val = extra_cols[0].text_input("ICN (DCK)", "123456789012345") if not h_icn else ""
+        audit_val = extra_cols[1].text_input("审计码 (DCJ)", "A020424988483") if not h_audit else ""
+
+    # --- 第三板块：身体特征 ---
+    st.subheader("🏃 身体特征与特殊标识")
+    with st.container(border=True):
+        phys_items = []
+        if not h_race: phys_items.append(("race", "种族 (DCL)", "W"))
+        if not h_h:    phys_items.append(("height", "身高", "072"))
+        if not h_w:    phys_items.append(("weight", "体重", "175"))
+        if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
+        if not h_hair: phys_items.append(("hair", "发色", "BRO"))
         
-        input_vals = {}
-        for i, (key, label, default) in enumerate(active_ctrls):
-            col_idx = i % 2
-            if col_idx == 0: row_cols = st.columns(2)
-            input_vals[key] = row_cols[col_idx].text_input(label, default)
+        phys_vals = {}
+        if phys_items:
+            p_cols = st.columns(len(phys_items))
+            for i, (key, label, default) in enumerate(phys_items):
+                phys_vals[key] = p_cols[i].text_input(label, default)
         
-        icn_val = input_vals.get("icn", "")
-        audit_val = input_vals.get("audit", "")
-
-        # 准驾信息
-        drive_cols = st.columns(3)
-        cl = drive_cols[0].text_input("类型 (DCA)", "D")
-        rs = drive_cols[1].text_input("限制 (DCB)", "NONE")
-        ed = drive_cols[2].text_input("背书 (DCD)", "NONE")
-
-    st.markdown("---")
-    st.subheader("🏠 地址与特征")
-    adr_row = st.columns(4)
-    addr = adr_row[0].text_input("街道", "29810 224TH AVE SE")
-    city = adr_row[1].text_input("城市", "KENT")
-    zip_c = adr_row[2].text_input("邮编", "98010")
-    sex = adr_row[3].selectbox("性别", ["1", "2", "9", "0"], format_func=lambda x: {"1":"男","2":"女","9":"其他","0":"未知"}[x])
-
-    # 物理特征动态补位
-    st.write("🏃 身体特征")
-    phys_items = []
-    if not h_race: phys_items.append(("race", "种族 (DCL)", "W"))
-    if not h_h:    phys_items.append(("height", "身高", "072"))
-    if not h_w:    phys_items.append(("weight", "体重", "175"))
-    if not h_e:    phys_items.append(("eyes", "眼色", "BLU"))
-    if not h_hair: phys_items.append(("hair", "发色", "BRO"))
-    
-    phys_vals = {}
-    p_cols = st.columns(len(phys_items) if phys_items else 1)
-    for i, (key, label, default) in enumerate(phys_items):
-        phys_vals[key] = p_cols[i].text_input(label, default)
-
-    st.markdown("##### 特殊标识")
-    sb1, sb2 = st.columns(2)
-    vet = sb1.toggle("退伍军人 (DDL)", False)
-    don = sb2.toggle("器官捐献 (DDK)", False)
+        st.markdown("---")
+        sb1, sb2 = st.columns(2)
+        vet = sb1.toggle("退伍军人 (DDL)", False)
+        don = sb2.toggle("器官捐献 (DDK)", False)
 
     if st.button("🚀 生成并深度分析", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'iss_date': iss, 'dob': dob, 'exp_date': exp, 'rev_date': rev,
-            'sex': sex, 'address': addr, 'city': city, 'zip': zip_c, 
+            'sex': sex, 'address': addr, 'dah': dah_val, 'city': city, 'zip': zip_c, 
             'height': phys_vals.get("height", "0"), 'weight': phys_vals.get("weight", "0"), 
             'eyes': phys_vals.get("eyes", ""), 'hair': phys_vals.get("hair", ""), 
             'race': phys_vals.get("race", "W"), 'donor': don, 'veteran': vet, 
@@ -223,8 +206,7 @@ def main():
                 st.subheader("📊 条码预览")
                 codes = encode(raw_data, columns=sel_cols, security_level=5)
                 st.image(render_image(codes, scale=3))
-                st.success(f"长度: {L} bytes | 规格: {sel_cols}列 × {len(codes)}行")
-                st.dataframe(reverse_pdf417_params(L), use_container_width=True, hide_index=True)
+                st.info(f"长度: {L} bytes | 规格: {sel_cols}列 × {len(codes)}行")
                 with st.expander("Hex Dump"): st.code(format_hex_dump(raw_data))
 
             with r_col:
