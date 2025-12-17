@@ -58,19 +58,15 @@ def reverse_pdf417_params(data_len, ecc_level=5):
     """
     ecc_map = {0:2, 1:4, 2:8, 3:16, 4:32, 5:64, 6:128, 7:256, 8:512}
     ecc_codewords = ecc_map.get(ecc_level, 64)
-    
-    # AAMVA 主要使用文本压缩 (每码词 2 字符) + 少量字节/数字切换
-    # 粗略估算码词数：数据字节/1.8 + ECC码词 + 1 (长度码词)
-    data_codewords = math.ceil(data_len / 1.8)
+    # 模拟 PDF417 压缩效率：大部分文本 2字节/码词，数字 2.9字节/码词
+    data_codewords = math.ceil(data_len / 1.85)
     total_codewords = data_codewords + ecc_codewords + 1
     
     results = []
-    # 推算 9 到 20 列组合
     for cols in range(9, 21):
         rows = math.ceil(total_codewords / cols)
-        if 3 <= rows <= 90: # PDF417 行数限制
-            # 记录 AAMVA 推荐比例 (接近 3:1 到 4:1)
-            is_recommended = "✅ 推荐" if 13 <= cols <= 17 and 12 <= rows <= 20 else ""
+        if 3 <= rows <= 90:
+            is_recommended = "✅ 推荐" if 13 <= cols <= 17 and 14 <= rows <= 22 else ""
             results.append({"列数 (Cols)": cols, "行数 (Rows)": rows, "总码词": total_codewords, "状态": is_recommended})
     return pd.DataFrame(results)
 
@@ -109,11 +105,11 @@ def build_aamva_stream(inputs, options):
 
 def main():
     st.set_page_config(page_title="AAMVA 逆向专家", layout="wide")
-    st.markdown("<h2 style='text-align: center;'>📐 AAMVA PDF417 参数逆向计算生成器</h2>", unsafe_allow_html=True)
+    st.markdown("<h2 style='text-align: center;'>📐 AAMVA PDF417 字段解析与逆向计算</h2>", unsafe_allow_html=True)
     st.markdown("---")
 
     with st.sidebar:
-        st.header("⚙️ 全局配置")
+        st.header("⚙️ 配置")
         state = st.selectbox("目标州", list(JURISDICTION_MAP.keys()), index=47)
         st.markdown("---")
         opts = {
@@ -122,30 +118,30 @@ def main():
             'hide_audit': st.checkbox("隐藏审计码", True)
         }
         st.markdown("---")
-        sel_cols = st.slider("当前强制列数", 9, 20, 13)
+        sel_cols = st.slider("预览列数", 9, 20, 15)
 
     c1, c2 = st.columns(2)
     with c1:
         st.subheader("👤 身份信息")
-        ln = st.text_input("姓 (DCS)", "SOLOMON")
-        fn = st.text_input("名 (DAC)", "DANIEL")
-        mn = st.text_input("中间名 (DAD)", "NONE")
-        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
+        ln = st.text_input("姓 (DCS)", "SOLOMON").upper()
+        fn = st.text_input("名 (DAC)", "DANIEL").upper()
+        mn = st.text_input("中间名 (DAD)", "NONE").upper()
+        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B").upper()
         real_id = st.toggle("REAL ID (DDA)", True)
         sex = st.selectbox("性别", ["1", "2"])
 
     with c2:
-        st.subheader("📅 日期与校验")
-        dob = st.text_input("生日", "08/08/1998")
+        st.subheader("📅 日期与等级")
+        dob = st.text_input("生日 (MM/DD/YYYY)", "08/08/1998")
         iss = st.text_input("签发日", "06/06/2024")
         exp = st.text_input("过期日", "08/08/2030")
         rev = st.text_input("修订日", "11/12/2019")
-        cl = st.text_input("等级", "NONE")
+        cl = st.text_input("等级", "NONE").upper()
 
     st.markdown("---")
     addr_c = st.columns(3)
-    addr = addr_c[0].text_input("街道", "29810 224TH AVE SE")
-    city = addr_c[1].text_input("城市", "KENT")
+    addr = addr_c[0].text_input("街道", "29810 224TH AVE SE").upper()
+    city = addr_c[1].text_input("城市", "KENT").upper()
     zip_c = addr_c[2].text_input("邮编", "98010")
 
     phys_c = st.columns(4)
@@ -154,15 +150,16 @@ def main():
     e_v = phys_c[2].text_input("眼色", "BLU") if not opts['hide_eyes'] else "BLU"
     hr_v = phys_c[3].text_input("发色", "BRO") if not opts['hide_hair'] else "BRO"
     
-    dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
+    dcf = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483").upper()
     audit = st.text_input("审计码 (DCJ)", "A020424988483") if not opts['hide_audit'] else ""
 
-    if st.button("🚀 生成条码并执行逆向计算", type="primary", use_container_width=True):
+    if st.button("🚀 生成条码并分析", type="primary", use_container_width=True):
         inputs = {'state':state,'last_name':ln,'first_name':fn,'middle_name':mn,'dl_number':dl,'iss_date':iss,'dob':dob,'exp_date':exp,'rev_date':rev,'sex':sex,'address':addr,'city':city,'zip':zip_c,'height':h_v,'weight':w_v,'eyes':e_v,'hair':hr_v,'real_id':real_id,'class':cl,'dd_code':dcf,'audit':audit}
         
         try:
             raw_data = build_aamva_stream(inputs, opts)
             L = len(raw_data)
+            raw_text = raw_data.decode('latin-1')
             
             col_left, col_right = st.columns([1, 1.2])
             with col_left:
@@ -173,22 +170,25 @@ def main():
                 st.code(format_hex_dump(raw_data), language="text")
 
             with col_right:
-                st.subheader("📐 PDF417 参数逆向计算")
-                st.markdown(f"**分析长度:** `{L} bytes` | **ECC 等级:** `Level 5 (64 Codewords)`")
+                # --- A. 详细字段解析 (移动到上方) ---
+                st.subheader("🔍 详细字段解析 (Detailed Analysis)")
+                data_part = raw_text.split("DL", 1)[1] if "DL" in raw_text else ""
+                parsed = []
+                for line in data_part.split('\x0a'):
+                    if len(line)>=3:
+                        tag = line[:3]
+                        parsed.append({"标识符 (Tag)": tag, "字段描述": AAMVA_TAGS_MAP.get(tag, "未知"), "解析内容": line[3:].strip()})
+                st.table(pd.DataFrame(parsed))
                 
-                # 推荐算法逻辑展示
+                # --- B. 逆向计算 ---
+                st.markdown("---")
+                st.subheader("📐 PDF417 参数逆向计算")
+                st.markdown(f"**分析长度:** `{L} bytes` | **纠错等级:** `Level 5`")
                 calc_df = reverse_pdf417_params(L, ecc_level=5)
                 st.dataframe(calc_df, use_container_width=True, hide_index=True)
                 
-                st.success(f"💡 AAMVA 推荐配置: 列数=13-17 之间，以获得最佳扫描长宽比。")
-                
-                with st.expander("🔍 详细字段解析"):
-                    raw_text = raw_data.decode('latin-1')
-                    data_part = raw_text.split("DL", 1)[1] if "DL" in raw_text else ""
-                    parsed = []
-                    for line in data_part.split('\x0a'):
-                        if len(line)>=3: parsed.append({"标识符":line[:3],"内容":line[3:]})
-                    st.table(pd.DataFrame(parsed))
+                with st.expander("查看原始明文流 (Raw Stream)"):
+                    st.text(raw_text)
 
         except Exception as e:
             st.error(f"发生错误: {e}")
