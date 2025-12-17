@@ -156,9 +156,9 @@ def main():
     st.subheader("👤 个人姓名与居住信息")
     with st.container(border=True):
         n_cols = st.columns(3)
-        ln = n_cols[0].text_input("姓氏 (DCS)", "SOLOMON")
-        fn = n_cols[1].text_input("名字 (DAC)", "DANIEL")
+        fn = n_cols[1].text_input("名字 (DAC)", "CORDOVA")
         mn = n_cols[2].text_input("中间名 (DAD)", "NONE")
+        ln = n_cols[0].text_input("姓氏 (DCS)", "SOLOMON")
         
         a_cols = st.columns([2, 1, 1])
         addr = a_cols[0].text_input("街道地址 (DAG)", "29810 224TH AVE SE")
@@ -171,7 +171,7 @@ def main():
     st.subheader("📝 证件核心信息")
     with st.container(border=True):
         c1, c2, c3 = st.columns([2, 1, 1])
-        dl = c1.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
+        dl = c1.text_input("证件号 (DAQ)", "66004729")
         cl = c2.text_input("类型 (DCA)", "D")
         real_id = c3.toggle("符合 REAL ID 标准 (DDA)", True)
         
