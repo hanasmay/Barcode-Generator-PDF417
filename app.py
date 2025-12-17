@@ -4,13 +4,13 @@ import io
 from datetime import datetime
 from PIL import Image
 
-# --- 1. 依赖库加载 ---
+# --- 依赖库加载 ---
 try:
     from pdf417 import encode, render_image
 except ImportError:
-    st.error("缺失依赖库！请在 requirements.txt 中添加 pdf417")
+    st.error("缺失依赖库！请确保在 requirements.txt 中包含了 pdf417 和 Pillow。")
 
-# ==================== 2. AAMVA 50 州 IIN 数据库 ====================
+# ==================== 1. AAMVA 50 州 IIN 数据库 ====================
 JURISDICTION_MAP = {
     "AL": "636033", "AK": "636059", "AZ": "636026", "AR": "636021", "CA": "636014",
     "CO": "636020", "CT": "636006", "DE": "636011", "DC": "636043", "FL": "636010",
@@ -24,23 +24,12 @@ JURISDICTION_MAP = {
     "VT": "636024", "VA": "636000", "WA": "636045", "WV": "636061", "WI": "636031", "WY": "636060"
 }
 
-# ==================== 3. 核心计算逻辑：回填对齐算法 ====================
+# ==================== 2. 核心数据对齐逻辑 ====================
 
 def build_aamva_stream(inputs, options):
     iin = JURISDICTION_MAP[inputs['state']]
-    
-    # 锁定版本参数：WA/TX 兼容性模式
     aamva_ver, jur_ver, num_entries = "09", "00", "01"
 
-    # 自动计算里程碑日期
-    try:
-        dob_dt = datetime.strptime(inputs['dob'], "%m%d%Y")
-        ddh = dob_dt.replace(year=dob_dt.year + 18).strftime("%m%d%Y")
-        ddj = dob_dt.replace(year=dob_dt.year + 21).strftime("%m%d%Y")
-    except:
-        ddh, ddj = "00000000", "00000000"
-
-    # --- 构建子文件主体 ---
     body = [
         f"DAQ{inputs['dl_number']}\x0a",
         f"DCS{inputs['last_name']}\x0a",
@@ -51,20 +40,13 @@ def build_aamva_stream(inputs, options):
         f"DBD{inputs['iss_date']}\x0a",
         f"DBB{inputs['dob']}\x0a",
         f"DBA{inputs['exp_date']}\x0a",
-        f"DBC{inputs['sex']}\x0a"
+        f"DBC{inputs['sex']}\x0a",
+        f"DAU{inputs['height']} in\x0a",
+        f"DAY{inputs['eyes']}\x0a",
+        f"DAG{inputs['address']}\x0a",
+        f"DAI{inputs['city']}\x0a",
+        f"DAJ{inputs['state']}\x0a"
     ]
-    
-    if not options['hide_height']: body.append(f"DAU{inputs['height']} in\x0a")
-    if not options['hide_eyes']: body.append(f"DAY{inputs['eyes']}\x0a")
-    if not options['hide_hair']: body.append(f"DAZ{inputs['hair']}\x0a")
-    if not options['hide_weight']: body.append(f"DAW{inputs['weight']}\x0a")
-    if not options['hide_race']: body.append(f"DCL{inputs['race']}\x0a")
-    
-    body.append(f"DAG{inputs['address']}\x0a")
-    if not options['hide_apt']: body.append(f"DAH{inputs['apt']}\x0a")
-    
-    body.append(f"DAI{inputs['city']}\x0a")
-    body.append(f"DAJ{inputs['state']}\x0a")
     
     zip_val = inputs['zip'].replace("-", "")
     if len(zip_val) == 5: zip_val += "0000"
@@ -76,126 +58,105 @@ def build_aamva_stream(inputs, options):
     body.append(f"DDD1\x0a")
     
     if not options['hide_audit']: body.append(f"DCJ{inputs['audit']}\x0a")
-    
-    body.append(f"DDH{ddh}\x0a")
-    body.append(f"DDJ{ddj}\x0a")
     body.append(f"DCU")
 
-    # 封装与测量
     subfile_str = "DL" + "".join(body) + "\x0d"
     subfile_bytes = subfile_str.encode('latin-1')
     len_dl = len(subfile_bytes)
 
-    # 头部长度对齐
-    prefix_len, cf_len, des_len, sep_len = 21, 9, 10, 1
-    total_len = prefix_len + cf_len + des_len + sep_len + len_dl
-    
+    # Offset 32 锁定
     header_prefix = f"@\x0a\x1e\x0dANSI {iin}{aamva_ver}{jur_ver}{num_entries}"
-    # 强制控制字段: DL03 + 5位长度 + 1位文件数 (共 10 字节)
-    control_field = f"DL03{total_len:05d}1"
-    offset_dl = prefix_len + cf_len + des_len + sep_len
-    designator = f"DL{offset_dl:04d}{len_dl:04d}"
+    designator = f"DL0032{len_dl:04d}"
     
-    return header_prefix.encode('latin-1') + \
-           control_field.encode('latin-1') + \
-           designator.encode('latin-1') + \
-           b"\x0d" + \
-           subfile_bytes
+    return header_prefix.encode('latin-1') + designator.encode('latin-1') + b"\x0d" + subfile_bytes
 
-# ==================== 4. Streamlit UI (恢复三列布局) ====================
+# ==================== 3. 仿 Passport-Cloud 布局 ====================
 
 def main():
-    st.set_page_config(page_title="AAMVA Pro", layout="wide")
-    st.title("💳 AAMVA PDF417 50-州 专家生成器")
-
-    # 恢复侧边栏动态控制
-    with st.sidebar:
-        st.header("⚙️ 动态控制")
-        options = {
-            'hide_height': st.checkbox("隐藏身高 (DAU)", False),
-            'hide_weight': st.checkbox("隐藏体重 (DAW)", False),
-            'hide_eyes': st.checkbox("隐藏眼睛 (DAY)", False),
-            'hide_hair': st.checkbox("隐藏头发 (DAZ)", False),
-            'hide_race': st.checkbox("隐藏民族 (DCL)", True),
-            'hide_apt': st.checkbox("隐藏公寓号 (DAH)", True),
-            'hide_audit': st.checkbox("隐藏审计码 (DCJ)", True),
-        }
-        st.markdown("---")
-        target_state = st.selectbox("选择目标州", list(JURISDICTION_MAP.keys()), index=47)
-        cols = st.slider("条码列数", 11, 19, 13)
-
-    # 恢复三列输入布局
-    col1, col2, col3 = st.columns(3)
+    st.set_page_config(page_title="PDF417 Barcode Generator", layout="wide")
     
-    with col1:
-        st.subheader("👤 身份/姓名")
-        ln = st.text_input("姓 (DCS)", "SOLOMON")
-        fn = st.text_input("名 (DAC)", "DANIEL")
-        mn = st.text_input("中间名", "NONE")
-        dl = st.text_input("证件号 (DAQ)", "WDL0ALXD2K1B")
-        sex = st.selectbox("性别", ["1", "2"])
-
-    with col2:
-        st.subheader("📍 地址/物理")
-        addr = st.text_input("地址 (DAG)", "29810 224TH AVE SE")
-        city = st.text_input("城市 (DAI)", "KENT")
-        zip_c = st.text_input("邮编 (DAK)", "98010")
-        h = st.text_input("身高 (IN)", "072")
-        w = st.text_input("体重 (LB)", "175")
-
-    with col3:
-        st.subheader("📅 日期/代码")
-        dob = st.text_input("生日 (MMDDYYYY)", "08081998")
-        iss = st.text_input("签发日", "06062024")
-        exp = st.text_input("过期日", "08082030")
-        rev = st.text_input("版面日期", "11122019")
-        dd = st.text_input("鉴别码 (DCF)", "WDL0ALXD2K1BA020424988483")
-        audit = st.text_input("审计码 (DCJ)", "A020424988483")
-
+    # 顶部标题栏
+    st.markdown("<h2 style='text-align: center;'>PDF417 Barcode Generator (AAMVA Standard)</h2>", unsafe_allow_html=True)
     st.markdown("---")
 
-    if st.button("🚀 立即生成条码", type="primary"):
+    # 1. 侧边栏：配置参数 (左侧)
+    with st.sidebar:
+        st.subheader("⚙️ Settings")
+        target_state = st.selectbox("Select State", list(JURISDICTION_MAP.keys()), index=47)
+        st.info(f"IIN: {JURISDICTION_MAP[target_state]} | Ver: 09")
+        
+        st.markdown("---")
+        st.subheader("Visibility")
+        options = {
+            'hide_height': st.checkbox("Hide Height (DAU)", False),
+            'hide_audit': st.checkbox("Hide Audit Code (DCJ)", True)
+        }
+        
+        st.markdown("---")
+        st.subheader("Barcode Style")
+        cols = st.slider("Columns", 11, 19, 13)
+        px_scale = st.slider("Scale", 1, 5, 3)
+
+    # 2. 主界面：输入表单 (右侧上方 - 两列布局)
+    with st.container():
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            ln = st.text_input("Last Name (DCS)", "SOLOMON")
+            fn = st.text_input("First Name (DAC)", "DANIEL")
+            mn = st.text_input("Middle Name", "NONE")
+            dl = st.text_input("License Number (DAQ)", "WDL0ALXD2K1B")
+            sex = st.selectbox("Sex (DBC)", ["1", "2"], format_func=lambda x: "Male" if x=="1" else "Female")
+
+        with col2:
+            dob = st.text_input("DOB (MMDDYYYY)", "08081998")
+            iss = st.text_input("Issue Date", "06062024")
+            exp = st.text_input("Expiry Date", "08082030")
+            rev = st.text_input("Revision Date", "11122019")
+            dd_code = st.text_input("Document Discriminator (DCF)", "WDL0ALXD2K1BA020424988483")
+
+        st.markdown("#### Address & Features")
+        addr_col, city_col, zip_col = st.columns([2, 1, 1])
+        addr = addr_col.text_input("Address (DAG)", "29810 224TH AVE SE")
+        city = city_col.text_input("City (DAI)", "KENT")
+        zip_c = zip_col.text_input("Zip (DAK)", "98010")
+
+    # 3. 操作按钮
+    st.markdown("<br>", unsafe_allow_html=True)
+    if st.button("Generate Barcode", type="primary", use_container_width=True):
         inputs = {
             'state': target_state, 'last_name': ln, 'first_name': fn, 'middle_name': mn,
             'dl_number': dl, 'dob': dob, 'iss_date': iss, 'exp_date': exp,
             'rev_date': rev, 'sex': sex, 'address': addr, 'city': city,
-            'zip': zip_c, 'height': h, 'weight': w, 'eyes': 'BLU', 'hair': 'BRO',
-            'class': 'NONE', 'dd_code': dd, 'apt': 'APT 1', 'audit': audit, 'race': 'W'
+            'zip': zip_c, 'height': '072', 'eyes': 'BLU',
+            'class': 'NONE', 'rest': 'NONE', 'endorse': 'NONE',
+            'dd_code': dd_code, 'audit': 'A020424988483', 'dda': 'F'
         }
         
         try:
-            # 1. 生成数据
             raw_data = build_aamva_stream(inputs, options)
             
-            # 2. 健壮的长度校验逻辑（修复了 int() 报错）
-            actual_len = len(raw_data)
-            # 动态查找 DL03 位置并抓取后续 5 位数字
-            idx = raw_data.find(b"DL03")
-            if idx != -1:
-                claimed_len = int(raw_data[idx+4 : idx+9].decode('latin-1'))
-                if actual_len == claimed_len:
-                    st.success(f"✅ 校验通过：共 {actual_len} 字节")
-                else:
-                    st.error(f"❌ 长度偏差：实际 {actual_len} vs 声明 {claimed_len}")
-
-            # 3. 渲染展示
-            res_c, hex_c = st.columns([1, 1.2])
-            with res_c:
+            # 4. 主界面：结果展示 (右侧下方)
+            st.markdown("---")
+            res_col, hex_col = st.columns([1, 1])
+            
+            with res_col:
+                st.subheader("Barcode Preview")
                 codes = encode(raw_data, columns=cols, security_level=5)
-                img = render_image(codes, scale=4, ratio=3, padding=10)
-                st.image(img, use_container_width=True)
+                img = render_image(codes, scale=px_scale, ratio=3, padding=10)
+                st.image(img, use_container_width=False)
                 
                 buf = io.BytesIO()
                 img.save(buf, format="PNG")
-                st.download_button("💾 下载图片", buf.getvalue(), f"{target_state}_DL.png")
+                st.download_button("Download PNG", buf.getvalue(), f"{target_state}_DL.png", use_container_width=True)
 
-            with hex_c:
-                st.subheader("📦 HEX 数据流")
-                hex_dump = raw_data.hex().upper()
-                st.code("\n".join([hex_dump[i:i+32] for i in range(0, len(hex_dump), 32)]), language="text")
-                
+            with hex_col:
+                st.subheader("Hexadecimal View")
+                hex_str = raw_data.hex().upper()
+                st.code("\n".join([hex_str[i:i+32] for i in range(0, len(hex_str), 32)]), language="text")
+
         except Exception as e:
-            st.error(f"错误：{e}")
+            st.error(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
